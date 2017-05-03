@@ -1,0 +1,37 @@
+#+FILETAGS: :personal:
+* Erste headline
+CLOSED: [2017-05-01]
+** TODO zweite Headline
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2017-04-27 Thu 15:22]
+- State "TODO"       from ""       [2017-04-27 Thu 15:22]
+:END:
+
+
+* DONE Schwarzes tshirt fur Konzerte                      :kaufen:mehrtags:
+CLOSED: [2017-05-01] SCHEDULED: [2017-04-27 Thu 15:22-17:00 -1w]--[2017-04-27 Thu 17:22]
+:PROPERTIES:
+:CREATED:  [2017-04-13 Thu 21:02]
+:ID: d58a5821-d533-45e1-ad18-27cbf06bbc9e
+:END:
+:LOGBOOK:
+- State "DONE"       from "TODO"       [2017-04-27 Thu 15:22]
+:END:
+#+begin_quote
+a quote!
+#+end_quote
+#+begin_src elisp
+(defun test)
+#+end_src
+
+[[./test.jpg]]
+
+[[./test2.jpg][Ein link "text]]
+
+
+
+
+Dies ist *der* Content. +foo+, +bar alpha+ =verbatim=, ~code~, _underline_
+
+
+
