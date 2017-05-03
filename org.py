@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from pyparsing import Word, alphas, Optional, SkipTo, ZeroOrMore, OneOrMore, Or, CharsNotIn, ParserElement, Group, StringEnd, White
 from pyparsing import *
+import pyparsing
 
 import itertools
 import functools
@@ -15,34 +16,70 @@ from pprint import pprint
 
 MAX_DEPTH = 8
 
+def _defaultStartDebugAction( instring, loc, expr ): 
+    print (("Match " + str(expr) + " at loc " + str(loc) + "(%d,%d)" % ( lineno(loc,instring), col(loc,instring) ))) 
+    
+def _defaultSuccessDebugAction( instring, startloc, endloc, expr, toks ): 
+    print ("Matched " + str(expr) + " -> " + str(toks.asList()) + " at loc " + "(%d,%d)" % ( lineno(startloc,instring), col(startloc,instring) )) 
+       
+def _defaultExceptionDebugAction( instring, loc, expr, exc ): 
+    print ("Exception raised:" + str(exc)) 
+
+saction = nullDebugAction, _defaultSuccessDebugAction, nullDebugAction    
+
 def Syntax():
+    comment = '# ' + restOfLine
     ParserElement.setDefaultWhitespaceChars('')
+    ParserElement.enablePackrat()
 
-    def precise(el):
-        g = Group(el)
-        g.leaveWhitespace()
-        return g
+    def lax(p, strict=None):
+        '''support less strict syntax'''
+        return p
 
-    def lax(el):
-        g = Group(el)
-        g.setDefaultWhitespaceChars(' \n\t')
-        return g
+    def lax_alt(p, strict):
+        '''add less strict syntax'''
+        return strict | p
+
+
+    def faster(p):
+        '''only for performance'''
+        return p
 
     s = Suppress
     k = Keyword
 
-    ws = s(White())
-    iws = White()
-    ows = Optional(ws)
-    wsl = s(White(' \t'))
-    iwsl = (White(' \t'))
-    owsl = Optional(wsl)
-    eol = s(LineEnd())
-    eols = Combine(OneOrMore(eol))
-    oeols = Combine(ZeroOrMore(eol))
-    sspace = OneOrMore(s(' '))
-    maybe_sspace = ZeroOrMore(s(' '))
+    def one_of(s):
+        return MatchFirst([Literal(t) for t in s])
 
+    def just_chars(cs, n='+'):
+        if isinstance(n, int):
+            n = '{%s}' % n
+        elif isinstance(n, tuple):
+            n = '{%s, %s}' % n
+        else:
+            assert(n in '+*')
+        r = '[%s]%s' % (cs, n)
+        #print(repr(r))
+        return Regex(r)
+
+    eolc = '\n\r'
+    wslc = ' \t'
+    wsc = ' \t\n\r'
+    ws = just_chars(wsc)
+    iws = ws
+    ows = just_chars(wsc, '*')
+    wsl = (just_chars(wslc))
+    swsl = s(wsl)
+    wsl1 = just_chars(wslc, n=1)
+    swsl1 = s(wsl1)
+    iwsl = wsl
+    owsl = just_chars(wslc, '*')
+    eolws = owsl
+    eol = (LineEnd())
+    eols = just_chars(eolc)
+    oeols = just_chars(eolc, '*')
+
+    line = lambda p: LineStart() + p + lax(owsl) + (LineEnd())
 
     enclosed = lambda name, start, end=None: Group(start + name + (start if end is None else end))
 
@@ -52,27 +89,40 @@ def Syntax():
     def number(n):
         return Word(nums, exact=n)
 
+
+    special_block_start_token = s(CaselessLiteral('begin_'))
+    special_block_end_token = s(CaselessLiteral('end_'))
+    dynamic_block_start_token = s(CaselessLiteral('begin:'))
+    dynamic_block_end_token = s(CaselessLiteral('end:'))
+    
     special_token = s('#+')
-    special_key = Word(alphas + '-_')
+    special_key = ~dynamic_block_start_token + ~dynamic_block_end_token + Word(alphas + '-_', min=1)
     #must end with newline!
     special_value = SkipTo(LineEnd())
     special_attr = Group(
-        special_token + special_key + scolon
+        special_token + faster(~special_block_start_token) + special_key + scolon
         + Optional(Optional(special_value)))
 
     special_attrs = special_attr + eol + ZeroOrMore(special_attr + eol)
 
     file_special = Group(special_attrs)
 
-    todo_keyword = Literal('TODO') | 'DONE'
+    todo_keyword = Word(alphas.upper()) #Literal('TODO') | 'DONE'
 
 
     tag_delim = scolon
-    tag = SkipTo(tag_delim | eol)
+    tag = SkipTo(lax_alt(eol, tag_delim))
     
-    tags = Group(tag_delim + OneOrMore(tag + tag_delim)).leaveWhitespace()
+    tags = Group(swsl1 + tag_delim + OneOrMore(tag + tag_delim)).setName('tags')
 
-    title = SkipTo((wsl + tags) | LineEnd()) + owsl
+    title = SkipTo(tags | eol).setName('title')
+
+    headline_token = Literal('*')
+    headline_start = lambda depth=(1,None): Combine(headline_token * depth) + swsl1
+    headline = lambda depth=(1,None): line((
+        headline_start(depth) + Optional(lax(owsl) + todo_keyword + swsl1)
+        + title + Optional(tags.copy()))
+    ).setName('headline')
 
     time = Group(number(2) + scolon + number(2))
     time_range = Group(time + Optional(sdash + time))
@@ -97,46 +147,70 @@ def Syntax():
         d = date + Optional(wsl + dayname) + Optional(wsl + time) + Optional(wsl + repeater)
         if extra:
             d += Optional(wsl + extra)
-        return s(start) + Group(d) + s(end)
+        return s(start) + Group(d).setName('date_stamp-inner') + s(end)
 
     def date_range(paren, extra=None):
-        return date_stamp(paren, time_range, extra) + Optional('--' + date_stamp(paren, time, extra))
+        return date_stamp(paren, time_range, extra).setName('date_stamp') + Optional('--' + date_stamp(paren, time, extra))
 
-    any_date_range = lambda *args: date_range(inactive, *args) | date_range(active, *args)
+    any_date_range = lambda *args: (date_range(inactive, *args) | date_range(active, *args)).setName('any_date_range')
 
 
     named_date = lambda name, extra=None: Group(name + scolon + wsl + any_date_range(extra)).leaveWhitespace().setName('named_date')
 
+    #todo closed still stuppports time range etc
     closed = named_date('CLOSED')
     scheduled = named_date('SCHEDULED', date_shift)
     deadlined = named_date('DEADLINE', date_shift)
 
     def named_dates():
-        return Each([Optional(owsl + d) for d in [closed, scheduled, deadlined]]) + owsl
+        ds = [closed, scheduled, deadlined]
+        #ds = itertools.permutations(ds)
+        #ds = [Optional(owsl + d) for d in ds]
+        #r = [And([dl[0]] + [lax_alt(owsl, wsl) + d for d in dl[1:]]) for dl in ds]
+        #return line(owsl + Or(r) + owsl).setName('named_dates')
 
-    drawer_keyword = lambda name: ungroup(enclosed(name, scolon))
+        o = Optional
+        withws = lambda a, b, c: a + owsl + b + owsl + c
+        return line(owsl + (
+            withws(closed, scheduled, o(deadlined))
+            | withws(closed, deadlined, o(scheduled)).setName('closed deadline').setDebug()
+            | withws(scheduled, deadlined, o(closed))
+            | withws(scheduled, closed, o(deadlined))
+            | withws(deadlined, closed, o(scheduled))
+            | withws(deadlined, scheduled, o(closed))
+            | closed
+            | scheduled
+            | deadlined
+            ) + owsl).setName('named_dates')
+
+
+    drawer_token = ':'
+    drawer_keyword = lambda name=SkipTo(drawer_token): ungroup(enclosed(name, s(drawer_token)))
 
     drawer_end = drawer_keyword('END')
 
-    drawer_entry = Group(~drawer_end + drawer_keyword(SkipTo(':') | LineEnd()))
+    drawer_entry = Group(~drawer_end + drawer_keyword(SkipTo(drawer_token) | LineEnd()))
 
     drawer = lambda name, entries: Group(
-        drawer_keyword(name) + eol
+        line(lax(owsl) + drawer_keyword(name)).setName('drawer_start: ' + name).setDebug()
         + entries
-        + drawer_end + eol)
+        + line(lax(owsl) + drawer_end))
     
 
     prop_content = (any_date_range() | restOfLine) + eol
-    prop_drawer = drawer('PROPERTIES', dictOf(drawer_entry, prop_content)).setName('prop_drawer')
+    prop_drawer = drawer('PROPERTIES', dictOf(drawer_entry, prop_content)).setName('prop_drawer')#.setDebug()
 
     logbook_state = ungroup(enclosed(Optional(todo_keyword), s('"')))
-    logbook_state_change = s('State') + ws + logbook_state + ws + s('from') + ws + logbook_state
+    logbook_entry_state_change = s('State') + wsl + logbook_state + wsl + s('from') + Optional(wsl + logbook_state)
+    logbook_entry_refiled = s('Refiled on')
+    logbook_entry_modified = s('modified')
 
-    logbook_content = logbook_state_change | SkipTo(any_date_range()) | restOfLine
-    logbook_entry = Group(s('-') + ws + logbook_content + ws + any_date_range())
-    logbook_drawer = drawer('LOGBOOK', ZeroOrMore(logbook_entry + eol)).setName('logbook_drawer')
+    logbook_content = (logbook_entry_state_change | logbook_entry_refiled | logbook_entry_modified) + wsl + any_date_range()
+    #TODO restOfLine for logbook OK?
+    logbook_entry = Group(s('-') + lax_alt(owsl, wsl) + (logbook_content | restOfLine)).setName('logbook_entry')#.setDebug() 
+    logbook_drawer = drawer('LOGBOOK', oeols + ZeroOrMore(logbook_entry + eols)).setName('logbook_drawer')
 
-    headline = Forward()
+    node = Forward()
 
 
 
@@ -153,19 +227,23 @@ def Syntax():
     ).setName('link')
 
     
-    any_word = Forward().setName('any_word').setDebug()
-    def tag(s, e=None):
-        r = Group(nested(SkipTo(e or s), s, e))
-        return r
+    punctuationc = '-.,;:"\'/'
+    punctuation = just_chars(punctuationc)
+    opunctuation = just_chars(punctuationc, '*')
+    markup = '-*/_=~+'
+    line_start_chars = markup + '#\d|:'
 
-    markup = '*/_=~+'
-    #TODO
-    punctuation = oneOf('. , -')
-    word = SkipTo(ws).setName('word')
-    def make_any_word(*filter_by):
-        any_words = [tag(d) for d in markup] + [any_date_range(), link, word]
-        return MatchFirst([Optional(punctuation) + p + Optional(punctuation) for p in any_words if p not in filter_by])
-    any_word << make_any_word()
+    word = CharsNotIn(wsc + punctuationc, min=1).setName('word')#.setDebugActions(*saction)
+
+    word_line = Forward().setName('word_line')
+    #nested tags not supported
+    # CharsNotIn(e or s, min=1)
+    nonnested_tag = lambda s, e=None: Group(
+        nested(
+            word + OneOrMore(wsl + word)
+            , s, e)
+    )
+
     def join_words(tokens):
         r = tokens.copy()
         r.clear()
@@ -178,20 +256,56 @@ def Syntax():
             else:
                 r[-1] += t
         return r
-    text = (any_word + ZeroOrMore(iws + any_word)).setName('text').setParseAction(join_words)
 
-    para_delim = eol * 2
-    para = Group(text) + para_delim
-    para.setName('para')
+    para_illegal_start = headline_start() | special_token# | drawer_keyword()
+
+    #TODO
+    naive_line = lambda p: (LineStart() + p + LineEnd())#.setDebug().setDebugActions(nullDebugAction, _defaultSuccessDebugAction, nullDebugAction)
+    simple_fast_line = naive_line(Regex('[^%s\n]*' % (line_start_chars))).setName('simple_fast_line')
+    fast_line = naive_line(Regex('[ \t]*[^%s\n][^%s\n]*' % (line_start_chars, markup))).setName('fast_line')
+    fast_lines = simple_fast_line
+    fast_word = Regex('[^%s\n]+' % (line_start_chars)).setName('fast_word')#.setDebugActions(*saction)
+    complex_words = [any_date_range(), link]
+    def make_word_line(*filter_by):
+        words = [nonnested_tag(d).setName('Tag %s' % d) for d in markup]
+        words = [fast_word] + complex_words + words + [word]
+        words = [p for p in words if p not in filter_by]
+        #words = [p.setDebugActions(*saction) for p in words]
+        words = [opunctuation + p + opunctuation for p in words]
+        words += [(wsl + punctuation + FollowedBy(wsl)).setName('just_punctuation').setDebugActions(*saction)]
+        return line(~para_illegal_start + OneOrMore(owsl + MatchFirst(words)) + owsl)
+    word_line << (fast_lines | make_word_line().setParseAction(join_words)).setName('word_line')
+
+
+    text = (OneOrMore(word_line)).setName('text').setParseAction(join_words)#.setDebug()
+
+
+    para_delim = line(owsl).setName('para_end')
+    para = Group(text) + (
+        (FollowedBy(para_delim) + para_delim) | FollowedBy(para_illegal_start)
+        )
+    para.setName('para')#.setDebug()
 
 
     #todo save parsed key for nested blocks
-    special_block_start = special_token + s('begin_') + special_key + Group(Optional(special_value)) + eol
-    special_block_end = eol + special_token + s('end') + Optional(s('_' + matchPreviousLiteral(special_key)))
-    special_block = Group(special_block_start
+    special_block_start = lambda start: line(special_token + lax(owsl) + start + special_key + Group(Optional(special_value))).setName('special_block_start')
+    current_special_block_name = matchPreviousLiteral(special_key)
+    special_block_end = line(
+        special_token + lax(owsl)
+        #support #+end only instead of #+end_name
+        + lax_alt(s('end'), special_block_end_token + Optional(s(current_special_block_name)))
+    ).setName('special_block_end')
+    special_block = Group(special_block_start(special_block_start_token)
                           + SkipTo(special_block_end)
                           + special_block_end
-    )
+    ).setName('special_block')
+
+    current_dynamic_block_name = matchPreviousLiteral(special_key)
+    dynamic_block_end = line(special_token + lax(owsl) + dynamic_block_end_token + lax_alt(owsl, wsl) + current_dynamic_block_name).setName('dynamic_block_end')
+    dynamic_block = Group(special_block_start(dynamic_block_start_token + wsl)
+                          + SkipTo(dynamic_block_end)
+                          + dynamic_block_end
+    ).setName('dynamic_block')
 
     scheme = Word(alphas)
 
@@ -200,38 +314,40 @@ def Syntax():
     path = Word(alphanums + '/-._~')
     url = Optional(scheme + s('://')) + path
 
-    block_attrs = special_attrs
+    block_attrs = special_attrs.copy()
+    block_attrs.setName('block_attrs')
 
-    block = Optional(block_attrs) + ~(Literal('*') * (1, None) + ws) + (
-        special_block | (link + eol) | para.setDebug()
-    ) + eol
+    figure = (link + eol).setName('figure')#.setDebug()
 
-    content_end = headline | StringEnd()
-    content = Group(OneOrMore(block + oeols)).setName('content').setDebug()
+    block_delim = line(owsl)
+    block_delims = OneOrMore(block_delim)
 
-    comment = '# ' + restOfLine
+    #TODO: debug why this is happening
+    any_block = ~headline_start() + (
+        special_block | dynamic_block | figure | block_delims | para
+    ).setName('any_block')
+    block = Group(Optional(block_attrs) + any_block).setName('block')
 
-    def the_headline(min_depth, top=False):
-        nested = ZeroOrMore(the_headline(min_depth + 1)) if min_depth < MAX_DEPTH else empty
-        #top level hs may start at nested level
-        depth = min_depth if top is False else (min_depth, None)
-        r = Group(Combine(Literal('*') * depth) + ws + Optional(todo_keyword + ws)
-                  + title
-                  + Optional(tags)
-                  + eols
-                  + Optional(named_dates() + eols)
-                  + Optional(prop_drawer + oeols)
-                  + Optional(logbook_drawer + oeols)
-                  + Optional(content)
-                  + nested
+    content = (OneOrMore(block)).setName('content')#.setDebug()
+
+
+    def the_node(min_depth, top=False):
+        nested = ZeroOrMore(the_node(min_depth + 1)) if min_depth < MAX_DEPTH else empty
+        r = Group(headline((min_depth, None)) + oeols
+                  + Optional(Group(named_dates())) + oeols
+                  + Optional(prop_drawer) + oeols
+                  + Optional(logbook_drawer)
+                  + Optional(oeols + Group(content) + oeols)
+                  + nested + oeols
         )
         return r
 
-    headline << the_headline(1)
+    node.setName('node')
+    node << the_node(1)
 
     
 
-    syntax = Optional(file_special) + ZeroOrMore(headline)
+    syntax = oeols + Optional(file_special) + ZeroOrMore(node)
     return syntax.leaveWhitespace()
 
 syntax = Syntax()
@@ -241,7 +357,13 @@ def parse(s):
     )
 
 if __name__ == '__main__':
-    with open('/home/hrehfeld/tasks/personal.org', 'r') as f:
-    #with open('test.org', 'r') as f:
+    from argparse import ArgumentParser
+
+    p = ArgumentParser('orgmode')
+    p.add_argument('file')
+
+    args = p.parse_args()
+    filename = args.file
+    with open(filename, 'r') as f:
         ast = parse(f.read())
     pprint(ast.asList())
