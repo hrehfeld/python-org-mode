@@ -65,7 +65,7 @@ def Syntax():
         if isinstance(n, int):
             n = '{%s}' % n
         elif isinstance(n, tuple):
-            n = '{%s, %s}' % n
+            n = '{%s,%s}' % n
         else:
             assert(n in '+*')
         r = '[%s]%s' % (cs, n)
@@ -82,6 +82,7 @@ def Syntax():
     swsl = s(wsl)
     wsl1 = just_chars(wslc, n=1)
     swsl1 = s(wsl1)
+    owsl1 = just_chars(wslc, n=(0,1))
     iwsl = wsl
     owsl = just_chars(wslc, '*')
     eolws = owsl
@@ -196,11 +197,11 @@ def Syntax():
 
 
     drawer_token = ':'
-    drawer_keyword = lambda name=SkipTo(drawer_token): ungroup(enclosed(name, s(drawer_token)))
+    drawer_keyword = lambda name=SkipTo(drawer_token) | lax(LineEnd()): ungroup(enclosed(name, s(drawer_token))) + s(owsl)
 
     drawer_end = drawer_keyword('END')
 
-    drawer_entry = Group(~drawer_end + drawer_keyword(SkipTo(drawer_token) | LineEnd()))
+    drawer_entry = LineStart() + (~drawer_end + drawer_keyword())
 
     drawer = lambda name, entries: Group(
         line(lax(owsl) + drawer_keyword(name)).setName('drawer_start: ' + name)#.setDebug()
@@ -218,8 +219,8 @@ def Syntax():
 
     logbook_content = (logbook_entry_state_change | logbook_entry_refiled | logbook_entry_modified) + wsl + any_date_range()
     #TODO restOfLine for logbook OK?
-    logbook_entry = Group(s('-') + lax_alt(owsl, wsl) + (logbook_content | restOfLine)).setName('logbook_entry')#.setDebug() 
-    logbook_drawer = drawer('LOGBOOK', oeols + ZeroOrMore(logbook_entry + eols)).setName('logbook_drawer')
+    logbook_entry = LineStart() + Group(s('-') + lax_alt(owsl, wsl) + (logbook_content | restOfLine)) + LineEnd().setName('logbook_entry')#.setDebug() 
+    logbook_drawer = drawer('LOGBOOK', lax(oeols) + ZeroOrMore(logbook_entry)).setName('logbook_drawer')
 
     node = Forward()
 
@@ -244,6 +245,14 @@ def Syntax():
     inline_markup = '-*/_=~+'
     text_markup = '|' + inline_markup
     line_start_chars = inline_markup + '#\d|:'
+
+    ul_start = owsl + just_chars('-+*', 1)
+
+    lists_start = ul_start
+    lists = OneOrMore(Group(line(
+        ul_start + owsl1 + owsl + SkipTo(eol)
+    )))#.setDebug()
+
 
     slurpc = unique((text_markup + punctuationc))
     def for_re_brackets(s):
@@ -286,7 +295,7 @@ def Syntax():
                 r[-1] += t
         return r
 
-    para_illegal_start = headline_start() | special_token# | drawer_keyword()
+    para_illegal_start = headline_start() | special_token | lists_start # | drawer_keyword()
 
     #TODO
     naive_line = lambda p: (LineStart() + p + LineEnd())#.setDebug().setDebugActions(nullDebugAction, _defaultSuccessDebugAction, nullDebugAction)
@@ -358,7 +367,7 @@ def Syntax():
 
     #TODO: debug why this is happening
     any_block = ~headline_start() + (
-        special_block | dynamic_block | figure | block_delims | para
+        special_block | dynamic_block | lists | figure | block_delims | para
     ).setName('any_block')
     block = Group(Optional(block_attrs) + any_block).setName('block')
 
