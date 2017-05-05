@@ -5,7 +5,7 @@ from pprint import pprint
 #        empty_line | headline | special_line | drawer_line | special_block | text
 #    ) + restOfLine + LineEnd)
 
-import re
+import re, itertools
 
 from collections import OrderedDict as odict
 
@@ -35,20 +35,40 @@ class PeekIter:
 def warning(*args):
     print('WARNING: ', *args)
 
+def debug(*args):
+    print('DEBUG: ', *args)
+
 list_format = lambda bullet: r'\s*%s\s' % bullet
 
+enclosed = lambda x, s, e=None: s + x + s if e is None else e
+
+_esc = re.escape
 _i = lambda s: r'(?i:%s)' % s
 _g = lambda s: r'(?:%s)' % s
+_or = lambda *args: _g('|'.join(args))
+def re_count(s):
+    if isinstance(s, str):
+        assert(s in '*+?')
+        return s
+    elif isinstance(s, int):
+        s = s, ''
+    return '{%s,%s}' % s
+_n = lambda s,n='+': _g(s) + re_count(n)
 o = lambda s: _g(s) + '?'
 g = lambda n, s: r'(?P<%s>%s)' % (n, s)
 def careful(s):
     assert(s[-1] in '+*')
     return _g(s) + '?'
-eol = '$'
-ws = r'\s+'
-ows = r'\s*'
-ws1 = r'\s+'
-ows1 = r'\s*'
+
+_lax = lambda lax, strict=None: lax if strict is None else _or(strict, lax) 
+
+
+eol = '\n'
+ws_c = '[ \t]'
+ws = _n(ws_c, '+')
+ows = _n(ws_c, '*')
+ws1 = ws_c
+ows1 = o(ws_c)
 
 chars = r'\w+'
 any = r'.+'
@@ -64,7 +84,7 @@ special_end_token = r'end_'
 special_end_start = special_token + special_end_token
 
  #(?=begin_)
-special_line_start = special_token + chars + ':'
+special_line_start = special_token + g('name', chars) + ':'
 
 comment_start = '#'
 
@@ -84,7 +104,30 @@ class Node:
     def __init__(self):
         pass
 
+def take_while(it, cond):
+    r = []
+    try:
+        while cond(it.peek()):
+            r.append(next(it))
+    except StopIteration:
+        pass
+    return r
     
+def take_while_finish(it, cond, finish):
+    r = []
+    try:
+        while cond(it.peek()):
+            r.append(next(it))
+        finish(it)
+    except StopIteration:
+        pass
+    return r
+
+ast_types = ['root', 'node', 'drawer', 'comment', 'block', 'attr', 'para', 'text', 'ul', 'ol', 'dl']
+for i, v in enumerate(ast_types):
+    exec('%s = %s' % (v.upper(), i))
+    
+
         
 headline_keyword = r'[A-Z]{3,}'
 headline_priority = r'\[#[A-Z]\]'
@@ -98,7 +141,31 @@ headline_str = (
     + eol
     )
 headline_re = re.compile(headline_str)
+
+
+
+schedule_item = g('name', _n('[A-Z]+')) + ':' + _lax(ows, ws) + g('date', _n(r'[-+-:<>/[\]A-Za-z0-9\s]') + r'[>\]]')
+schedule_item_re = re.compile(schedule_item)
+schedule_re = re.compile(
+    ows +
+    _n('[A-Z]+' + ':') + _lax(ows, ws) + _n(r'[-+-:<>/[\]A-Za-z0-9\s]')
+    + ows + eol
+)
 def headline_parser(st, ast, it, loc, line):
+
+    def parse_schedule():    
+        t, i, l = it.peek()
+        if not t == L_TEXT:
+            return
+        if not schedule_re.match(l):
+            debug('schedule not matched:', l)
+            return
+        dates = [m.group('name', 'date') for m in schedule_item_re.finditer(l)]
+        print(dates)
+
+            
+            
+    schedule = parse_schedule()
     m = headline_re.match(line)
     if m:
         #print('M', m.group(0))
@@ -110,38 +177,17 @@ def headline_parser(st, ast, it, loc, line):
 def empty_parser(st, ast, it, loc, line):
     return dict(t=-1, c=dict())
 
-def take_while_finish(it, cond, finish):
-    r = []
-    try:
-        while cond(it.peek()):
-            r.append(next(it))
-        finish(it)
-    except StopIteration:
-        pass
-    return r
-    
-
 ss_name = chars
-ss_value = '.+'
+ss_value = '[^\n]+'
 ss_str = special_start_start + g('name', ss_name) + ows + g('value', o(careful(ss_value))) + ows + eol
 print(ss_str)
 ss_re = re.compile(ss_str)
 def special_start_parser(st, ast, it, loc, line):
-
     lines = take_while_finish(it
                               , lambda l: l[0] != L_SPECIAL_END
                               #just throw away end marker
                               #TODO: check name
                               , lambda it: next(it))
-
-    # lines = []
-    # try:
-    #     while it.peek()[0] != L_SPECIAL_END:
-    #         lines.append(next(it)[1])
-    #     #just throw away end
-    #     end = next(it) 
-    # except StopIteration:
-    #     pass
 
     lines = ''.join([v for k,i,v in lines])
 
@@ -152,8 +198,18 @@ def special_start_parser(st, ast, it, loc, line):
     return dict(t=-1, c=c)
 def special_end_parser(st, ast, it, loc, line):
     assert(False)
+
+sa_value = ss_value
+sa_str = special_line_start + o(ws1 + ows + g('value', o(careful(sa_value))) + ows) + eol
+sa_re = re.compile(sa_str)
 def special_line_parser(st, ast, it, loc, line):
-    return dict(t=-1, c=dict())
+    m = sa_re.match(line)
+    if not m:
+        raise Exception(enclosed(line, '"'))
+    print(m.group(0))
+    name, value = m.group('name', 'value')
+    r = dict(t=ATTR, c={name: value})
+    return r
 def comment_parser(st, ast, it, loc, line):
     assert(False)
 
@@ -186,7 +242,6 @@ def drawer_parser(st, ast, it, loc, line):
         values = [v for v in values if v is not None]
         values = odict(values)
     r = dict(t=DRAWER, c=[name, values])
-    print(r)
     return r
 def drawer_end_parser(st, ast, it, loc, line):
     #TODO this should be text then
@@ -198,15 +253,29 @@ def ul_parser(st, ast, it, loc, line):
 def ol_parser(st, ast, it, loc, line):
     return dict(t=-1, c=dict())
 def text_parser(st, ast, it, loc, line):
-    return dict(t=-1, c=dict())
+    lines = take_while(
+        it
+        , lambda l: l[0] in {L_TEXT, L_COMMENT}
+    )
+    lines = [(L_TEXT, line)] + [(t, l) for t, i, l in lines]
+    groups = itertools.groupby(lines, lambda l: l[0])
+    lines = None
+    c = []
+    groups = [dict(t=TEXT if t != L_COMMENT else COMMENT, c=''.join([l for t, l in ls])) for t, ls in groups]
+            
+    r = dict(t=PARA, c=groups)
+    return r
 
 line_types = []
 
 parsers = {}
 
-def add_parser(name, start, parser):
+def add_type(name, start):
     t = len(line_types)
     line_types.append((name, start))
+    return t
+def add_parser(name, start, parser):
+    t = add_type(name, start)
     parsers[t] = parser
     
 add_parser('empty', r'^\s+$', empty_parser)
@@ -214,7 +283,9 @@ add_parser('headline', headline_start, headline_parser)
 add_parser('special_start', special_start_start, special_start_parser)
 add_parser('special_end', special_end_start, special_end_parser)
 add_parser('special_line', special_line_start, special_line_parser)
-add_parser('comment', comment_start, comment_parser)
+#todo
+#add_parser('comment', comment_start, comment_parser)
+add_type('comment', comment_start)
 add_parser('drawer_end', drawer_end, drawer_end_parser)
 add_parser('drawer', drawer_start, drawer_parser)
 add_parser('dl', list_format('[-*+]') + r'.*::', dl_parser)
@@ -225,12 +296,6 @@ add_parser('text', r'.', text_parser)
 for i, (k, v) in enumerate(line_types):
     exec('%s = %s' % ('L_' + k.upper(), i))
 line_types = [(i, re.compile(v)) for i, (k, v) in enumerate(line_types)]
-
-ast_types = ['root', 'node', 'drawer', 'block', 'attr', 'para', 'ul', 'ol', 'dl']
-for i, v in enumerate(ast_types):
-    exec('%s = %s' % (v.upper(), i))
-line_types = [(i, re.compile(v)) for i, (k, v) in enumerate(line_types)]
-
 
 
 def parse(f):
@@ -262,8 +327,9 @@ def parse(f):
         while True:
             e = next(it)
             t, *args = e
-            r = parsers[t](st, ast, it, *args)
-            ast.append(r)
+            if t in parsers:
+                r = parsers[t](st, ast, it, *args)
+                ast.append(r)
     except StopIteration:
         pass
 
