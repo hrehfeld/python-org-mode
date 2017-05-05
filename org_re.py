@@ -35,10 +35,12 @@ class PeekIter:
         raise StopIteration
 
 def warning(*args):
-    print('WARNING: ', *args)
+    print('WARNING:', *args)
 
 def debug(*args):
-    print('DEBUG: ', *args)
+    print('DEBUG:', *args)
+
+import date_re
 
 list_format = lambda bullet: r'\s*%s\s' % bullet
 
@@ -92,7 +94,7 @@ def take_while_finish(it, cond, finish):
         pass
     return r
 
-ast_types = ['root', 'node', 'drawer', 'comment', 'block', 'attr', 'para', 'text', 'ul', 'ol', 'dl']
+ast_types = ['root', 'node', 'drawer', 'comment', 'block', 'attr', 'para', 'text', 'ul', 'ol', 'dl', 'date', 'date_range']
 for i, v in enumerate(ast_types):
     exec('%s = %s' % (v.upper(), i))
     
@@ -100,28 +102,70 @@ for i, v in enumerate(ast_types):
         
 headline_keyword = r'[A-Z]{3,}'
 headline_priority = r'\[#[A-Z]\]'
-headline_title = r'.+'
+headline_title = r'[^:]+.*?'
 headline_tags = r':.*:'
 headline_str = (
     headline_start + ows + o(g('keyword', headline_keyword) + ws)
     + o(g('priority', headline_priority) + ws)
-    + careful(headline_title) + ows
-    + o(headline_tags + ows)
+    + o(g('title', headline_title) + ows)
+    + o(g('tags', headline_tags))
+    + ows
     + eol
     )
 headline_re = re.compile(headline_str)
-
-
-
-schedule_item = g('name', n_('[A-Z]+')) + ':' + lax(ows, ws) + g('date', n_(r'[-+-:<>/[\]A-Za-z0-9\s]') + r'[>\]]')
+schedule_item = g('name', '[A-Z]+') + ':' + lax_only(ows, ws) + date_re.simple_date_range
+print(schedule_item)
 schedule_item_re = re.compile(schedule_item)
 schedule_re = re.compile(
     ows +
-    n_('[A-Z]+' + ':') + lax(ows, ws) + n_(r'[-+-:<>/[\]A-Za-z0-9\s]')
+    n_('[A-Z]+' + ':') + lax(ows, ws) + n_(r'[-+.:<>/[\]A-Za-z0-9\s]')
     + ows + eol
 )
-def headline_parser(st, ast, it, loc, line):
+full_date_re = re.compile(date_re.full_date_stamp)
+def make_date(m):
+    from datetime import datetime
+    from datetime import time
+    from datetime import timedelta
+    from datetime import date as Date
+    
+    ms = m.groupdict()
 
+    def parse_date(d):
+        dm = full_date_re.match(d)
+        if not dm:
+            warning('date doesnt match: "' + d + '"')
+            return 
+        active = dm.group('_active') is not None
+        date_t = Date
+        date = dm.group('year', 'month', 'day')
+        date = [int(d) for d in date]
+
+        hm = 'hour', 'minute'
+
+        end_time = None
+        if dm.group('time'):
+            t = dm.group(*hm)
+            t = [int(e) for e in t]
+
+            et = dm.group('hour_range', 'minute_range')
+            if et[0] is not None:
+                et = [int(e) for e in et]
+                end_time = datetime(*date, *et)
+            date = datetime(*date, *t)
+        else:
+            date = Date(*date)
+        return (active, (date, end_time))
+
+    start_date = parse_date(ms['date'])
+    end_date = ms['daterange']
+    r = dict(t=DATE, c=start_date)
+    if end_date:
+        end_date = parse_date(end_date)
+        r = dict(t=DATE_RANGE, c=(start_date, end_date))
+
+    return r
+
+def headline_parser(st, ast, it, loc, line):
     def parse_schedule():    
         t, i, l = it.peek()
         if not t == L_TEXT:
@@ -129,18 +173,24 @@ def headline_parser(st, ast, it, loc, line):
         if not schedule_re.match(l):
             debug('schedule not matched:', l)
             return
-        dates = [m.group('name', 'date') for m in schedule_item_re.finditer(l)]
-        print(dates)
-
-            
-            
-    schedule = parse_schedule()
+        dates = [(m.group('name'), make_date(m)) for m in schedule_item_re.finditer(l)]
+        return odict(dates)
+    schedule = parse_schedule() or {} #TODO careful, default is unoreded
     m = headline_re.match(line)
-    if m:
-        #print('M', m.group(0))
-        pass
-    else:
-        print(line)
+    if not m:
+        warning('Line doesnt match: ', line)
+    headline = odict([
+        (k, m.group(k)) for k in ['keyword', 'priority', 'title']
+    ])
+    tags = m.group('tags')
+    if tags:
+        tags = tags.split(':')
+        tags = [t for t in tags if t]
+    if not tags:
+        tags = []
+    headline['tags'] = tags
+    headline['schedule'] = schedule
+    #print(headline)
     content = dict()
     return dict(t=NODE, c=content)
 def empty_parser(st, ast, it, loc, line):
