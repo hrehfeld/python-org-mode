@@ -7,6 +7,8 @@ from pprint import pprint
 
 import re, itertools
 
+from re_parse import *
+
 from collections import OrderedDict as odict
 
 class PeekIter:
@@ -40,39 +42,6 @@ def debug(*args):
 
 list_format = lambda bullet: r'\s*%s\s' % bullet
 
-enclosed = lambda x, s, e=None: s + x + s if e is None else e
-
-_esc = re.escape
-_i = lambda s: r'(?i:%s)' % s
-_g = lambda s: r'(?:%s)' % s
-_or = lambda *args: _g('|'.join(args))
-def re_count(s):
-    if isinstance(s, str):
-        assert(s in '*+?')
-        return s
-    elif isinstance(s, int):
-        s = s, ''
-    return '{%s,%s}' % s
-_n = lambda s,n='+': _g(s) + re_count(n)
-o = lambda s: _g(s) + '?'
-g = lambda n, s: r'(?P<%s>%s)' % (n, s)
-def careful(s):
-    assert(s[-1] in '+*')
-    return _g(s) + '?'
-
-_lax = lambda lax, strict=None: lax if strict is None else _or(strict, lax) 
-
-
-eol = '\n'
-ws_c = '[ \t]'
-ws = _n(ws_c, '+')
-ows = _n(ws_c, '*')
-ws1 = ws_c
-ows1 = o(ws_c)
-
-chars = r'\w+'
-any = r'.+'
-
 
 headline_token = r'\*+'
 headline_start = headline_token + ws
@@ -90,7 +59,7 @@ comment_start = '#'
 
 drawer_token = r':'
 drawer_start = drawer_token + g('name', r'[\w\d]+') + drawer_token
-drawer_end = drawer_token + _g(_i('end')) + drawer_token
+drawer_end = drawer_token + i_('end') + drawer_token
 
 
 class ParseState:
@@ -144,11 +113,11 @@ headline_re = re.compile(headline_str)
 
 
 
-schedule_item = g('name', _n('[A-Z]+')) + ':' + _lax(ows, ws) + g('date', _n(r'[-+-:<>/[\]A-Za-z0-9\s]') + r'[>\]]')
+schedule_item = g('name', n_('[A-Z]+')) + ':' + lax(ows, ws) + g('date', n_(r'[-+-:<>/[\]A-Za-z0-9\s]') + r'[>\]]')
 schedule_item_re = re.compile(schedule_item)
 schedule_re = re.compile(
     ows +
-    _n('[A-Z]+' + ':') + _lax(ows, ws) + _n(r'[-+-:<>/[\]A-Za-z0-9\s]')
+    n_('[A-Z]+' + ':') + lax(ows, ws) + n_(r'[-+-:<>/[\]A-Za-z0-9\s]')
     + ows + eol
 )
 def headline_parser(st, ast, it, loc, line):
