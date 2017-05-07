@@ -1,8 +1,5 @@
-import re
-
 enclosed = lambda x, s, e=None: s + x + (s if e is None else e)
 
-esc_ = re.escape
 i_ = lambda s: r'(?i:%s)' % s
 g_ = lambda s: r'(?:%s)' % s
 or_ = lambda *args: g_('|'.join(args))
@@ -28,12 +25,13 @@ lax_only = lambda lax, strict=None: lax
 
 
 eol = '\n'
-ws_c = '[ \t]'
-ws = ws_c + '+'
-ows = ws_c + '*'
-ws1 = ws_c
-ows1 = ws_c + '?'
+ws1 = ' '
 
-chars = r'\w+'
-any = r'.+'
+drawer_key = lambda s: enclosed(s, ':')
 
+def prop(name, value):
+    return drawer_key(name) + ws1 + value
+
+def drawer(name, values):
+    r = [drawer_key(name)] + values + [drawer_key('END')]
+    return eol.join(r)

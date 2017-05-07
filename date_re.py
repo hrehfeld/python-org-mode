@@ -37,7 +37,6 @@ def date_stamp(time, extra=(repeater,), postfix=''):
     return d
 
 full_date_stamp = date_paren(date_stamp(time_range, (repeater, date_shift)))
-print(full_date_stamp)
 
 def date_range(extra=None):
     p = date_paren
@@ -48,7 +47,6 @@ full_date_range = date_range((repeater, date_shift))
 
 simple_date = n_(or_(r'[-+.:/ \d' + duration_chars + ']+', dayname))
 simple_date_range = g('date', date_paren(simple_date, 0)) + o('--' + g('daterange', date_paren(simple_date, 1)))
-print(simple_date_range)
 
 
 named_date = lambda name, extra=None: (name + ':' + ws + date_range(extra))
