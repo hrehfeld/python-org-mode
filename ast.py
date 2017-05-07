@@ -5,7 +5,6 @@ from str_build import *
 from datetime import datetime
 
 
-
 class Date:
     format = '%Y-%m-%d %a'
     time_format = '%H:%M'
@@ -82,7 +81,10 @@ class List:
         self.content = items or []
 
     def __str__(self):
-        return eol.join([self.indent + str(li) for li in self.content])
+        r = [str(li) for li in self.content]
+        r = eol.join(r)
+        r = eol.join([self.indent + l for l in r.split(eol)])
+        return r
 
 class ListItem:
     content_str = lambda self: eol.join(map(str, self.content))
@@ -103,12 +105,12 @@ class OrderedListItem(ListItem):
     pass
 
 class Drawer:
-    def __init__(self, name, values):
+    def __init__(self, name, content=None):
         self.name = name
-        self.values = values
+        self.content = content or []
 
     def __str__(self):
-        return drawer(self.name, self.values)
+        return drawer(self.name, list(map(str, self.content)))
         
 class Node:
     def __init__(self, level, keyword=None, priority=None, title='', tags=None, attrs=None, content=None, planning=None, properties=None, drawers=None, children=None):

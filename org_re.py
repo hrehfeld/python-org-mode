@@ -44,7 +44,9 @@ def warning(*args):
     print('WARNING:', *args)
 
 def debug(*args):
-    print('DEBUG:', *args)
+    #print('DEBUG:', *args)
+    pass
+    
 
 import date_re
 
@@ -68,7 +70,7 @@ class Parser:
                 t, *args = e
                 p = self.get_parser(t)
                 if p is not None:
-                    print('calling %s' % line_types_names[t])
+                    #print('calling %s' % line_types_names[t])
                     p(st, it, (t, *args))
         except StopIteration:
             pass
@@ -91,9 +93,9 @@ class SubParser:
                 t, *args = e
                 p = self.get_parser(t)
                 if p is not None:
-                    print(self.name + 'calling %s' % line_types_names[t])
+                    debug(self.name + ' calling %s' % line_types_names[t])
                     p(st, it, (t, *args))
-                print('stopped at %s' % line_types_names[_type(it.peek())])
+                debug('stopped at %s' % line_types_names[_type(it.peek())])
         except StopIteration:
             pass
     
@@ -299,7 +301,7 @@ def special_start_parser(st, it, line):
                               , lambda it: next(it))
 
     lines = ''.join([_line(l) for l in lines])
-    print(lines)
+    #print(lines)
 
     m = ss_re.match(_line(line))
     if not m:
@@ -348,24 +350,24 @@ drawer_value = any
 drawer_str = drawer_start + o(lax(ws, ws1) + g('value', drawer_value)) + ows + eol
 drawer_re = re.compile(drawer_str)
 def drawer_parser(st, it, line):
-    print('drawer @ %s' % (_loc(line)))
+    #print('drawer @ %s' % (_loc(line)))
     clear(st, _match(line).group('indent'))
-    lines = take_while_finish(
-        it
-        , lambda l: _type(l) not in {L_DRAWER_END}
-        #just throw away end marker
-        , lambda it: warning('expected end marker, found %s at %s: %s' % (
-            line_types_names[_type(it.peek())], _loc(it.peek()), _line(it.peek()))) \
-        if _type(it.peek()) != L_DRAWER_END else next(it)
-    )
-
     m = drawer_re.match(_line(line))
     if not m:
         raise Exception('"%s"' % _line(line))
     name = m.group('name')
 
-    values = lines
+    stop = lambda l: _type(l) not in {L_DRAWER_END, L_HEADLINE}
     if name == 'PROPERTIES':
+        lines = take_while_finish(
+            it
+            , stop
+            #just throw away end marker
+            , lambda it: warning('expected end marker, found %s at %s: %s' % (
+                line_types_names[_type(it.peek())], _loc(it.peek()), _line(it.peek()))) \
+            if _type(it.peek()) != L_DRAWER_END else next(it)
+        )
+        
         def match(l):
             m = drawer_re.match(_line(l))
             if not m:
@@ -378,10 +380,15 @@ def drawer_parser(st, it, line):
         #todo use union?
         st.current_node.properties = values
     else:
-        #TODO handle value types
-        values = [_line(l)[:-1] for l in values]
-        st.current_node.drawers[name] = values
-        st.current_greater.content.append(Drawer(name, values))
+        r = Drawer(name)
+        st.current_node.drawers[name] = r
+        st.current_greater.content.append(r)
+        st.current_greaters.append(r)
+        p = SubParser('drawer').set_stop(stop)(st, it)
+        n = it.peek()
+        if _type(n) == L_DRAWER_END:
+            #throw away
+            next(it)
 def drawer_end_parser(st, it, line):
     #TODO this should be text then
     raise Exception('Drawer should consume drawer_end @%s: "%s"' % (_loc(line), _line(line)))
@@ -402,14 +409,14 @@ def ul_parser(st, it, line):
     #check if we're still in the same list
     while isinstance(st.current_greater, List):
         p = st.current_greater
-        print(p)
+        #print(p)
         if p.indent > indent:
             st.current_greaters.pop()
     if p is None or p.indent < indent:
         p = List(indent)
         st.current_greater.content.append(p)
         st.current_greaters.append(p)
-    print(repr(p))
+    #print(repr(p))
         
     class valid_line:
         def __init__(self):
@@ -435,7 +442,7 @@ def ul_parser(st, it, line):
                 m = ws_re.match(_line(l))
                 oindent = 0 if m is None else len(m.group())
             if oindent <= len(indent):
-                print('indent smaller')
+                #print('indent smaller')
                 return False
             return True
     parser = SubParser('ul @%s' % _loc(line)).set_stop(valid_line())
@@ -521,6 +528,7 @@ def parse(f):
         assert(False)
         
 
+    #TODO: would need regex check for \\ + ows
     line_cont_token = '\\\\\n'
     line_cont_token_len = len(line_cont_token)
     def lines(f):
@@ -528,7 +536,7 @@ def parse(f):
         for i, l in it:
             if l.endswith(line_cont_token):
                 oi, ol = next(it)
-                l = l[:line_cont_token_len] + ol
+                l = l[:-line_cont_token_len] + ol
             #print(line_types_names[match_type(l)[0]], i)
             r = (*match_type(l), i, l)
             #print(_line(r)[:-1], line_types_names[_type(r)])
