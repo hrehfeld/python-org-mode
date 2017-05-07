@@ -282,20 +282,20 @@ def empty_parser(st, it, line):
     st.current_greater.content.append(Empty(lines))
 
 special_token = r'#\+'
-special_start_token = 'begin_'
-special_start_start = indent + special_token + special_start_token
-special_end_token = r'end_'
-special_end_start = indent + special_token + special_end_token
+block_start_token = 'begin_'
+block_start_start = indent + special_token + block_start_token
+block_end_token = r'end_'
+block_end_start = indent + special_token + block_end_token
 
         
-ss_name = chars
-ss_value = '[^\n]+'
-ss_str = special_start_start + g('name', ss_name) + ows + g('value', o(careful(ss_value))) + ows + eol
-ss_re = re.compile(ss_str)
-def special_start_parser(st, it, line):
+block_start_name = chars
+block_start_value = '[^\n]+'
+block_start_str = block_start_start + g('name', block_start_name) + ows + g('value', o(careful(block_start_value))) + ows + eol
+block_start_re = re.compile(block_start_str)
+def block_start_parser(st, it, line):
     clear(st, _match(line).group('indent'))
     lines = take_while_finish(it
-                              , lambda l: l[0] != L_SPECIAL_END
+                              , lambda l: l[0] != L_BLOCK_END
                               #just throw away end marker
                               #TODO: check name
                               , lambda it: next(it))
@@ -303,23 +303,23 @@ def special_start_parser(st, it, line):
     lines = ''.join([_line(l) for l in lines])
     #print(lines)
 
-    m = ss_re.match(_line(line))
+    m = block_start_re.match(_line(line))
     if not m:
         raise Exception(_line(line))
     c = [(m.group(k)) for k in ['name', 'value']] + [lines]
     r = Block(*c)
     st.current_greater.content.append(r)
-def special_end_parser(st, it, line):
-    raise Exception('special_end should never happen @%s: %s' % (_loc(line), _line(line)))
+def block_end_parser(st, it, line):
+    raise Exception('block_end should never happen @%s: %s' % (_loc(line), _line(line)))
 
  #(?=begin_)
 special_line_start = indent + special_token + g('name', chars) + ':'
 
-sa_value = ss_value
-sa_str = special_line_start + o(ws1 + ows + g('value', o(careful(sa_value))) + ows) + eol
-sa_re = re.compile(sa_str)
+special_line_value = block_start_value
+special_line_str = special_line_start + o(ws1 + ows + g('value', o(careful(special_line_value))) + ows) + eol
+special_line_re = re.compile(special_line_str)
 def special_line_parser(st, it, line):
-    m = sa_re.match(_line(line))
+    m = special_line_re.match(_line(line))
     if not m:
         raise Exception(enclosed(_line(line), '"'))
     name, value = m.group('name', 'value')
@@ -498,8 +498,8 @@ def add_parser(name, start, parser):
     
 add_parser('empty', ows + eol, empty_parser)
 add_parser('headline', headline_start, headline_parser)
-add_parser('special_start', special_start_start, special_start_parser)
-add_parser('special_end', special_end_start, special_end_parser)
+add_parser('block_start', block_start_start, block_start_parser)
+add_parser('block_end', block_end_start, block_end_parser)
 add_parser('special_line', special_line_start, special_line_parser)
 #todo
 add_parser('comment', comment_start, comment_parser)
