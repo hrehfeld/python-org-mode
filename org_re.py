@@ -16,6 +16,21 @@ from magic_repr import make_repr
 from ast import *
 import ast
 
+import sys
+
+
+class QueueFirstIter:
+    def __init__(self, it, queue):
+        self.it = it
+        self.queue = queue
+        
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.queue:
+            return self.queue.pop(0)
+        return next(self.it)
 
 class PeekIter:
     def __init__(self, it):
@@ -41,10 +56,16 @@ class PeekIter:
         raise StopIteration
 
 def warning(*args):
-    print('WARNING:', *args)
+    r = 'WARNING:' + ' '.join(map(str, args)) + '\n'
+    sys.stderr.write(r)
+
+print_debug = False
 
 def debug(*args):
-    #print('DEBUG:', *args)
+    if not print_debug:
+        return
+    r = 'DEBUG:' + ' '.join(map(str, args)) + '\n'
+    sys.stderr.write(r)
     pass
     
 
@@ -56,49 +77,128 @@ _match = lambda l: l[1]
 _loc = lambda l: l[2]
 _line = lambda l: l[3]
 
+def list_parsers():
+    return [L_DL, L_UL, L_OL]
+
+def footnote_def_parsers():
+    return [L_EMPTY, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_COMMENT, L_DRAWER] + item_parsers() + [L_TEXT]
+
+def item_parsers():
+    r = [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER, L_TEXT]
+    return r
+
+def greater_parsers():
+    r = [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER, L_TEXT]
+    return r
+
+def headline_parsers():
+    return [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER] + list_parsers() + [L_TEXT]
+
+def greater_block_parsers():
+    return headline_parsers()
+
+def drawer_parsers():
+    return [L_DRAWER_END] + list(filter(lambda e: e != L_DRAWER, headline_parsers()))
+
+def dynamic_block_parsers():
+    return [L_EMPTY, L_TEXT]
+
 #set later
-line_types_names = {}
-parsers = {}
+line_types_names = []
+line_types = []
+parsers = []
+
+
+
+# add_parser('empty', ows + eol, empty_parser)
+# add_parser('headline', headline_start, headline_parser)
+# add_parser('block_start', block_start_start, block_start_parser)
+# add_parser('block_end', block_end_start, block_end_parser)
+# add_parser('special_line', special_line_start, special_line_parser)
+# #todo
+# add_parser('comment', comment_start, comment_parser)
+# #add_type('comment', comment_start)
+# add_parser('drawer_end', drawer_end, drawer_end_parser)
+# add_parser('drawer', drawer_start, drawer_parser)
+# add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + '::' + g('item', '.*'), dl_parser)
+# add_parser('ul', list_format(list_bullet_chars) + g('item', '.*'), ul_parser)
+# add_parser('ol', list_format(list_counter) + g('item', '.*'), ol_parser)
+# add_parser('text', indent + r'.', text_parser)
+
+
+def lt_from(ps):
+    return [(k, line_types[k]) for k in ps]    
+
+def from_list(ps):
+    ts = lt_from(ps)
+    ps = dict([(k, parsers[k]) for k in ps])
+    return ts, ps
+
 class Parser:
-    def get_parser(self, t):
-        return parsers[t]
-    
-    def __call__(self, st, it):
-        try:
-            while True:
-                e = next(it)
-                t, *args = e
-                p = self.get_parser(t)
-                if p is not None:
-                    #print('calling %s' % line_types_names[t])
-                    p(st, it, (t, *args))
-        except StopIteration:
-            pass
+    def __init__(self, parent_parser, it, line_types, parsers, name, continue_predicate=None):
+        self.parent_parser = parent_parser
+        if parent_parser is None:
+            it = QueueFirstIter(it, [])
+        self.base_it = it
+        def match_type(line):
+            #debug([line_types_names[t] for t,r in self.line_types])
+            for t, r in self.line_types:
+                m = r.match(line)
+                if m:
+                    debug('from "%s" matched as %s: "%s" to "%s"' % (self.name, line_types_names[t], line[:-1], r))
+                    return t, m
+            raise Exception('Unmatched "%s": in %s' % (line, self.line_types))
 
-class SubParser:
-    def __init__(self, name):
+        #TODO: would need backwards regex check for \\ + ows
+        line_cont_token = '\\\\\n'
+        line_cont_token_len = len(line_cont_token)
+        def lines(f):
+            it = enumerate(f)
+            for i, l in it:
+                if l.endswith(line_cont_token):
+                    oi, ol = next(it)
+                    l = l[:-line_cont_token_len] + ol
+                #print(line_types_names[match_type(l)[0]], i)
+                r = (*match_type(l), i, l)
+                #print(_line(r)[:-1], line_types_names[_type(r)])
+                yield r
+
+        self.it = PeekIter(lines(it))
+
+        self.line_types = line_types
+        self.parsers = parsers
         self.name = name
+        self.continue_predicate = continue_predicate or (lambda *args: True)
 
-    def set_stop(self, f):
-        self.stop_predicate = f
-        return self
-
-    def get_parser(self, t):
-        return parsers[t]
-    
-    def __call__(self, st, it):
+    def __call__(self, st, *args):
+        it = self.it
+        r = []
         try:
-            while self.stop_predicate(it.peek()):
-                e = next(it)
-                t, *args = e
-                p = self.get_parser(t)
-                if p is not None:
-                    debug(self.name + ' calling %s' % line_types_names[t])
-                    p(st, it, (t, *args))
-                debug('stopped at %s' % line_types_names[_type(it.peek())])
+            while self.continue_predicate(it.peek()):
+                t = _type(it.peek())
+                if t not in self.parsers:
+                    debug('%s not in self.parsers: %s' % (line_types_names[t], self.parsers))
+                    raise StopIteration()
+                l = next(it)
+                p = self.parsers[t]
+                debug('from "%s" calling %s %s' % (self.name, line_types_names[t], p))
+                r.append(p(st, self, l, *args))
+            debug('StopPredicate at %s' % line_types_names[_type(it.peek())])
         except StopIteration:
-            pass
-    
+            debug('StopIteration')
+        self.reset_state()
+        return r
+
+    def reset_state(self):
+        #reset inner it state
+        #debug(self.it.queue)
+        #debug(self.base_it.queue)
+        self.base_it.queue.extend([_line(l) for l in self.it.queue])
+        self.it.queue = []
+
+    def sub_parser(self, *args):
+        self.reset_state()
+        return Parser(self, self.base_it, *args)
 
 class ParseState:
     def __init__(self):
@@ -166,10 +266,15 @@ def clear(st, indent):
     clear_attrs(st)
     clear_lists(st, indent)
 
-indent = g('indent', ows)    
+def noop_parser(st, parser, line):
+    pass
+    
+
+indent = g('indent', careful(ows))
+no_indent = g('indent', '')
 
 headline_token = g('level', r'\*+')
-headline_start = g('indent', '') + headline_token + lax(ws, ws1)
+headline_start = no_indent + headline_token + lax(ws, ws1)
 
 headline_keyword = r'[A-Z]{3,}'
 headline_priority = r'\[#[A-Z]\]'
@@ -183,13 +288,6 @@ headline_str = (
     + eol
     )
 headline_re = re.compile(headline_str)
-schedule_item = g('name', '[A-Z]+') + ':' + lax_only(ows, ws) + date_re.simple_date_range
-schedule_item_re = re.compile(schedule_item)
-schedule_re = re.compile(
-    ows +
-    n_('[A-Z]+' + ':') + lax(ows, ws) + n_(r'[-+.:<>/[\]A-Za-z0-9\s]')
-    + ows + eol
-)
 full_date_re = re.compile(date_re.full_date_stamp)
 def make_date(m):
     from datetime import datetime
@@ -233,23 +331,16 @@ def make_date(m):
 
     return r
 
-def headline_parser(st, it, line):
+def headline_parser(st, parser, line):
+    debug('-------HEADLINE')
     clear(st, 0)
-    def parse_schedule():    
-        t, m, i, l = it.peek()
-        if not t == L_TEXT:
-            return
-        next(it)
-        if not schedule_re.match(l):
-            debug('schedule not matched:', l)
-            return
-        dates = [(m.group('name'), make_date(m)) for m in schedule_item_re.finditer(l)]
-        return odict(dates)
-    schedule = parse_schedule() or {} #TODO careful, default is unoreded
+
     m = headline_re.match(_line(line))
     if not m:
         warning('Line doesnt match: ', _line(line))
-    level = len(m.group('level'))
+
+    get_level = lambda m: len(m.group('level'))
+    level = get_level(m)
     tags = m.group('tags')
     if tags:
         tags = tags.split(':')
@@ -260,26 +351,60 @@ def headline_parser(st, it, line):
         (k, m.group(k)) for k in ['keyword', 'priority', 'title']
     ])
     headline['tags'] = tags
-    headline['planning'] = schedule
-    #print(headline)
 
     node = Node(level, **headline)
+    
     p = st.current_nodes[-1]
     while node.level <= st.current_node.level:
         st.current_nodes.pop()
     p = st.current_node
     p.children.append(node)
     st.current_nodes.append(node)
-    st.current_greaters = [node]
+    st.current_greaters.append(node)
 
-def empty_parser(st, it, line):
+    class NTimes:
+        def __init__(self, n):
+            self.n = n
+            self.i = 0
+        def __call__(self, *args):
+            self.i += 1
+            return self.i <= self.n
+
+    debug('SUBPARSER HEADLING')
+    pred = lambda l: not (_type(l) == L_HEADLINE and get_level(_match(l)) >= level)
+    n1 = NTimes(1)
+    p = parser.sub_parser(
+        *from_list([L_PLANNING, L_PROPERTIES] + headline_parsers())
+        , 'headline-planning-properties'
+        , lambda l: n1(l) and pred(l)
+    )(st)
+    n1 = NTimes(1)
+    p = parser.sub_parser(
+        *from_list([L_PROPERTIES] + headline_parsers())
+        , 'headline-properties'
+        , lambda l: n1(l) and pred(l)
+    )(st)
+    p = parser.sub_parser(*from_list(headline_parsers()), 'headline', pred)(st)
+    
+schedule_item = g('name', '[A-Z]+') + ':' + lax_only(ows, ws) + date_re.simple_date_range
+schedule_item_re = re.compile(schedule_item)
+schedule_re = re.compile(
+    ows +
+    n_('[A-Z]+' + ':') + lax(ows, ws) + n_(r'[-+.:<>/[\]A-Za-z0-9\s]')
+    + ows + eol
+)
+def planning_parser(st, parser, line):
+    m = _match(line)
+    dates = odict([(m.group('name'), make_date(m)) for m in schedule_item_re.finditer(_line(line))])
+    debug(dates)
+    st.current_node.planning = dates
+
+def empty_parser(st, parser, line):
     #empty doesn't clear lists
     clear_attrs(st)
 
-    lines = take_while(it, lambda l: _type(l) == L_EMPTY)
-    lines = [_line(line)] + [_line(l) for l in lines]
-    lines = [l[:-1] for l in lines]
-    st.current_greater.content.append(Empty(lines))
+    c = st.current_greater.content
+    c.append(Empty([_line(line)[:-1]]))
 
 special_token = r'#\+'
 block_start_token = 'begin_'
@@ -292,25 +417,26 @@ block_start_name = chars
 block_start_value = '[^\n]+'
 block_start_str = block_start_start + g('name', block_start_name) + ows + g('value', o(careful(block_start_value))) + ows + eol
 block_start_re = re.compile(block_start_str)
-def block_start_parser(st, it, line):
+def block_start_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
-    lines = take_while_finish(it
-                              , lambda l: l[0] != L_BLOCK_END
-                              #just throw away end marker
-                              #TODO: check name
-                              , lambda it: next(it))
-
-    lines = ''.join([_line(l) for l in lines])
-    #print(lines)
 
     m = block_start_re.match(_line(line))
     if not m:
         raise Exception(_line(line))
-    c = [(m.group(k)) for k in ['name', 'value']] + [lines]
+    c = [(m.group(k)) for k in ['name', 'value']]
+
+    def inner_text_parser(st, parser, line):
+        return _line(line)
+
+    ps = lt_from([L_BLOCK_END, L_TEXT]), {L_TEXT: inner_text_parser, L_BLOCK_END: block_end_parser}
+    lines = parser.sub_parser(*ps, 'block')(st)
+
+    c += [''.join(lines)]
     r = Block(*c)
     st.current_greater.content.append(r)
-def block_end_parser(st, it, line):
-    raise Exception('block_end should never happen @%s: %s' % (_loc(line), _line(line)))
+
+def block_end_parser(st, parser, line):
+    raise StopIteration()
 
  #(?=begin_)
 special_line_start = indent + special_token + g('name', chars) + ':'
@@ -318,38 +444,51 @@ special_line_start = indent + special_token + g('name', chars) + ':'
 special_line_value = block_start_value
 special_line_str = special_line_start + o(ws1 + ows + g('value', o(careful(special_line_value))) + ows) + eol
 special_line_re = re.compile(special_line_str)
-def special_line_parser(st, it, line):
+def special_line_parser(st, parser, line):
     m = special_line_re.match(_line(line))
     if not m:
         raise Exception(enclosed(_line(line), '"'))
     name, value = m.group('name', 'value')
+    #TODO check for different types of attrs
     st.current_attrs.append((name, value))
-    #r = dict(t=ATTR, c={name: value})
-    #return r
+
+dynamic_block_start_token = i_('begin')
+dynamic_block_start = indent + special_token + block_start_token + ':' + ws + g('name', nws
+) + lax(ws, ws1) + g('parameters', any) + eol
 
 comment_start = indent + '#' + ws1 + g('text', '.*') + eol
 
-def comment_parser(st, it, line):
-    clear(st, _match(line).group('indent'))
-    lines = take_while(it, lambda l: _type(l) == L_COMMENT)
-    #p = SubParser().set_stop(lambda l: _type(line) != L_COMMENT)(st, it)
+def comment_parser(st, parser, line):
+    m = _match(line)
+    clear(st, m.group('indent'))
+    text = m.group('text')
 
-
-    lines = [line] + lines
-    lines = [_match(l).group('text') for l in lines]
-    lines = eol.join(lines)
-    st.current_greater.content.append(Comment(lines))
-    
-    
+    r = Comment(text)
+    st.current_greater.content.append(r)
 
 drawer_token = r':'
-drawer_start = indent + drawer_token + g('name', r'[-_\w\d]+') + drawer_token
+drawer_value = g('value', nin_(eol) + '+')
+
+properties_name = i_('PROPERTIES')
+properties_start = indent + drawer_token + properties_name + drawer_token
+properties_property = indent + drawer_token + g('name', r'\S+[+\S]') + drawer_token + o(ws1 + drawer_value) + eol
+def properties_parser(st, parser, line):
+    clear(st, _match(line).group('indent'))
+
+    p = parser.sub_parser(*from_list([L_DRAWER_END, L_PROPERTY]), 'PROPERTIES')(st)
+
+def property_parser(st, parser, line):
+    m = _match(line)
+    k, v = m.group('name'), m.group('value')
+    st.current_node.properties[k] = v
+    
+
+drawer_start = indent + drawer_token + g('name', not_(properties_name) + r'[-_\w\d]+') + drawer_token
 drawer_end = indent + drawer_token + i_('end') + drawer_token
     
-drawer_value = any
-drawer_str = drawer_start + o(lax(ws, ws1) + g('value', drawer_value)) + ows + eol
+drawer_str = drawer_start + o(lax(ws, ws1) + drawer_value) + ows + eol
 drawer_re = re.compile(drawer_str)
-def drawer_parser(st, it, line):
+def drawer_parser(st, parser, line):
     #print('drawer @ %s' % (_loc(line)))
     clear(st, _match(line).group('indent'))
     m = drawer_re.match(_line(line))
@@ -357,41 +496,26 @@ def drawer_parser(st, it, line):
         raise Exception('"%s"' % _line(line))
     name = m.group('name')
 
-    stop = lambda l: _type(l) not in {L_DRAWER_END, L_HEADLINE}
-    if name == 'PROPERTIES':
-        lines = take_while_finish(
-            it
-            , stop
-            #just throw away end marker
-            , lambda it: warning('expected end marker, found %s at %s: %s' % (
-                line_types_names[_type(it.peek())], _loc(it.peek()), _line(it.peek()))) \
-            if _type(it.peek()) != L_DRAWER_END else next(it)
-        )
-        
-        def match(l):
-            m = drawer_re.match(_line(l))
-            if not m:
-                warning('no end marker @%s: %s' % (_loc(l), _line(l)))
-                return None
-            return m.group('name'), m.group('value')
-        values = [match(l) for l in lines]
-        values = [v for v in values if v is not None]
-        values = odict(values)
-        #todo use union?
-        st.current_node.properties = values
-    else:
-        r = Drawer(name)
-        st.current_node.drawers[name] = r
-        st.current_greater.content.append(r)
-        st.current_greaters.append(r)
-        p = SubParser('drawer').set_stop(stop)(st, it)
-        n = it.peek()
-        if _type(n) == L_DRAWER_END:
-            #throw away
-            next(it)
-def drawer_end_parser(st, it, line):
-    #TODO this should be text then
-    raise Exception('Drawer should consume drawer_end @%s: "%s"' % (_loc(line), _line(line)))
+    
+    r = Drawer(name)
+    st.current_node.drawers[name] = r
+    st.current_greater.content.append(r)
+    st.current_greaters.append(r)
+    parser.sub_parser(
+        *from_list(drawer_parsers())
+        , 'drawer'
+        , lambda l: _type(l) not in {L_HEADLINE}
+    )(st)
+    st.current_greaters.pop()
+    debug(r.content[0].content)
+
+def drawer_end_parser(st, parser, line):
+    #throw away
+    raise StopIteration()
+
+
+
+footnote_def_start = no_indent + enclosed(or_(num, 'fn:' + g('label', r'[-_\w]+')), r'\[', r'\]') + g('contents', any) + eol
 
 list_format = lambda bullet: indent + (g('bullet', '%s') % bullet) + r'\s'
 list_bullet_chars = '[-*+]'
@@ -399,25 +523,31 @@ list_counter = or_('[A-Za-z]', '[0-9]+') + r'[.)]'
 
 
 ws_re = re.compile(ws)
-def dl_parser(st, it, line):
-    return dict(t=-1, c=dict())
-def ul_parser(st, it, line):
+def dl_parser(st, parser, line):
+    pass
+def ul_parser(st, parser, line):
 
     indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
+    assert(item[-1] != eol)
+
+    nindent = len(indent)
 
     p = None
     #check if we're still in the same list
     while isinstance(st.current_greater, List):
         p = st.current_greater
-        #print(p)
+        debug(repr(p))
         if p.indent > indent:
             st.current_greaters.pop()
+        else:
+            break
     if p is None or p.indent < indent:
         p = List(indent)
         st.current_greater.content.append(p)
         st.current_greaters.append(p)
     #print(repr(p))
-        
+
+    list_end = False
     class valid_line:
         def __init__(self):
             self.last_ = None
@@ -429,10 +559,11 @@ def ul_parser(st, it, line):
                 return False
             self.last_ = t
             #An item ends before the next item,
-            if t in {L_UL, L_OL, L_DL}:
-                return False
-            #the first line less or equally indented than its starting line,
+            #if t in {L_UL, L_OL, L_DL}:
+            #    return False
 
+            #the first line less or equally indented than its starting
+            #line that is not empty
             if t in {L_EMPTY}:
                 return True
             try:
@@ -441,17 +572,23 @@ def ul_parser(st, it, line):
                 warning('indent redone for ', line_types_names[t])
                 m = ws_re.match(_line(l))
                 oindent = 0 if m is None else len(m.group())
-            if oindent <= len(indent):
-                #print('indent smaller')
+            if oindent <= nindent:
+                nonlocal list_end
+                assert(not list_end)
+                list_end = True
                 return False
             return True
-    parser = SubParser('ul @%s' % _loc(line)).set_stop(valid_line())
 
     r = ListItem([item], bullet)
-    st.current_greaters.append(r)
     p.content.append(r)
+    st.current_greaters.append(r)
 
-    parser(st, it)
+    lt, ps = from_list(headline_parsers())
+    parser.sub_parser(lt, ps, 'ul @%s' % _loc(line), valid_line())(st)
+
+    st.current_greaters.pop()
+    if list_end:
+        st.current_greaters.pop()
 
 #    item_lines = p(st, it)
 #    item_lines = [item] + [_line(l) for l in item_lines]
@@ -461,96 +598,54 @@ def ul_parser(st, it, line):
         
     #st.current_greaters.pop()
 
-def ol_parser(st, it, line):
-    return dict(t=-1, c=dict())
-def text_parser(st, it, line):
+def ol_parser(st, parser, line):
+    pass
+def text_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
-    lines = take_while(
-        it
-        , lambda l: _type(l) in {L_TEXT, L_COMMENT}
-    )
-    lines = [(_type(l), _line(l)) for l in lines]
-    lines = [(_type(line), _line(line))] + lines
-    groups = itertools.groupby(lines, lambda l: _type(l))
-    lines = None
-    c = []
-    types = {
-        L_COMMENT: Comment
-        , L_TEXT: Text
-        }
-    groups = [(types[t])(eol.join([l[:-1] for t, l in ls])) for t, ls in groups]
-            
-    r = Para(groups)
+
+    def inner_text_parser(st, parser, line):
+        return _line(line)
+
+    ps = lt_from(headline_parsers()), {L_TEXT: inner_text_parser}
+    lines = parser.sub_parser(*ps, 'paragraph')(st)
+    lines = [_line(line)] + lines
+    for l in lines:
+        assert(l[-1] == eol)
+    lines = [l[:-1] for l in lines]
+    r = Para(lines)
     st.current_greater.content.append(r)
-    return r
 
-line_types = []
-
-parsers = {}
-
-def add_type(name, start):
-    t = len(line_types)
-    line_types.append((name, start))
-    return t
 def add_parser(name, start, parser):
-    t = add_type(name, start)
-    parsers[t] = parser
+    line_types.append(start)
+    line_types_names.append(name.upper())
+    parsers.append(parser)
     
 add_parser('empty', ows + eol, empty_parser)
 add_parser('headline', headline_start, headline_parser)
+add_parser('planning', schedule_re, planning_parser)
+add_parser('properties', properties_start, properties_parser)
+add_parser('property', properties_property, property_parser)
 add_parser('block_start', block_start_start, block_start_parser)
 add_parser('block_end', block_end_start, block_end_parser)
 add_parser('special_line', special_line_start, special_line_parser)
-#todo
+add_parser('dynamic_block', dynamic_block_start, noop_parser)
 add_parser('comment', comment_start, comment_parser)
-#add_type('comment', comment_start)
 add_parser('drawer_end', drawer_end, drawer_end_parser)
 add_parser('drawer', drawer_start, drawer_parser)
-add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + '::' + g('item', '.*'), dl_parser)
-add_parser('ul', list_format(list_bullet_chars) + g('item', '.*'), ul_parser)
-add_parser('ol', list_format(list_counter) + g('item', '.*'), ol_parser)
+add_parser('footnote_def', footnote_def_start, noop_parser)
+add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + '::' + g('item', '.*') + eol, dl_parser)
+add_parser('ul', list_format(list_bullet_chars) + g('item', '.*') + eol, ul_parser)
+add_parser('ol', list_format(list_counter) + g('item', '.*') + eol, ol_parser)
 add_parser('text', indent + r'.', text_parser)
 
-line_types_names = odict([(i, k.upper()) for i, (k, v) in enumerate(line_types)])
-for i, (k, v) in enumerate(line_types):
-    exec('%s = %s' % ('L_' + k.upper(), i))
-line_types = [(i, re.compile(v)) for i, (k, v) in enumerate(line_types)]
+for i, n in enumerate(line_types_names):
+    exec('%s = %s' % ('L_' + n, i))
+line_types = [re.compile(v) for v in line_types]
 
 
 def parse(f):
-    ts = []
-
-    def match_type(line):
-        for t, r in line_types:
-            m = r.match(line)
-            if m:
-                return t, m
-        assert(False)
-        
-
-    #TODO: would need regex check for \\ + ows
-    line_cont_token = '\\\\\n'
-    line_cont_token_len = len(line_cont_token)
-    def lines(f):
-        it = enumerate(f)
-        for i, l in it:
-            if l.endswith(line_cont_token):
-                oi, ol = next(it)
-                l = l[:-line_cont_token_len] + ol
-            #print(line_types_names[match_type(l)[0]], i)
-            r = (*match_type(l), i, l)
-            #print(_line(r)[:-1], line_types_names[_type(r)])
-            yield r
-            
-
-    ast = [dict(t=ROOT, c={})]
     st = ParseState()
-    it = PeekIter(lines(f))
-
-    Parser()(st, it)
-    
-    #names = [line_types_names[i] for i in ts]
-    #return list(zip(names, lines))
+    Parser(None, f, *from_list(headline_parsers()), 'file')(st)
     return st.current_nodes[0]
 
 
@@ -560,9 +655,14 @@ if __name__ == '__main__':
     p = ArgumentParser('orgmode')
     p.add_argument('file')
     p.add_argument('--profile', action='store_true')
-
+    p.add_argument('--verbose', '-v', action='store_true')
 
     args = p.parse_args()
+
+    if args.verbose:
+        print_debug = True
+    
+
     filename = args.file
     with open(filename, 'r') as f:
         if args.profile:
@@ -574,4 +674,5 @@ if __name__ == '__main__':
             ast = parse(f)
             duration = time.time() - start_time
             print(ast)
+            #print(repr(ast))
             #print(duration)

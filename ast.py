@@ -4,6 +4,12 @@ from magic_repr import make_repr
 from str_build import *
 from datetime import datetime
 
+def indent(s, indent):
+    return eol.join([indent + l for l in s.split(eol)])
+
+def indent_list(s, indent):
+    return eol.join([indent + l for l in s])
+    
 
 class Date:
     format = '%Y-%m-%d %a'
@@ -31,18 +37,32 @@ class DateRange:
     def __str__(self):
         return str(self.start) + '--' + str(self.end)
 
-class Text:
-    def __init__(self, text):
-        self.text = text
+class Para:
+    def __init__(self, content=None):
+        self.content = content or []
 
     def __str__(self):
-        return self.text
-        
-class Comment(Text):
-    def __str__(self):
-        r = self.text.split(eol)
-        r = ['# ' + l for l in r]
+        r = map(str, self.content)
         return eol.join(r)
+
+    def __repr__(self):
+        return repr([type(self).__name__, *self.content])
+
+class Empty(Para):
+    pass
+
+
+class Comment:
+    def __init__(self, value=None):
+        self.value = value or ''
+        assert('\n' not in self.value)
+
+    def __str__(self):
+        return '# ' + str(self.value)
+
+    def __repr__(self):
+        return repr([type(self).__name__, self.value])
+    
 
 class Attr():
     def __init__(self, name, value):
@@ -52,27 +72,34 @@ class Attr():
     def __str__(self):
         return '#+' + self.name + ': ' + (self.value or '')
     
+    def __repr__(self):
+        return repr([type(self).__name__, [self.name, self.value]])
         
-class Para:
-    def __init__(self, content):
-        self.content = content
-
-    def __str__(self):
-        return eol.join([str(c) for c in self.content])
-
-class Empty(Para):
-    pass
-
 class Block:
-    def __init__(self, name, value, content):
+    def __init__(self, name, value=None, content=None):
         self.name = name
         self.value = value
-        self.content = content
+        self.content = content or ''
 
     def __str__(self):
-        start = '#+begin_' + self.name + ws1 + self.value + eol
+        start = '#+begin_' + self.name
+        if self.value:
+            start += ws1 + self.value
+        start += eol
         end = '#+end_' + self.name
         return start + self.content + end
+
+    def __repr__(self):
+        return repr([type(self).__name__, [self.name, self.value], *self.content])
+    
+class CommentBlock(Block):
+    def __init__(self, content=None):
+        Block.__init__(self, 'comment', None, content)
+
+    def __str__(self):
+        r = ['# ' + l for l in r]
+        return eol.join(r)
+
 
 
 class List:
@@ -81,19 +108,35 @@ class List:
         self.content = items or []
 
     def __str__(self):
-        r = [str(li) for li in self.content]
+        r = map(str, self.content)
         r = eol.join(r)
-        r = eol.join([self.indent + l for l in r.split(eol)])
+        #r = indent(r, self.indent)
         return r
 
+    def __repr__(self):
+        return repr([type(self).__name__, self.indent, *self.content])
+    
+
 class ListItem:
-    content_str = lambda self: eol.join(map(str, self.content))
+    #str(type(c)) + 
+    content_str = lambda self: eol.join(map(lambda c: str(c), self.content))
+
     def __init__(self, content=None, bullet='-'):
         self.bullet = bullet
         self.content = content or []
 
     def __str__(self):
-        return self.bullet + ws1 + self.content_str()
+
+        start = self.bullet + ws1
+
+        #assert(str(self.content[0])[-1] != eol)
+        c = self.content_str()
+        
+        c = c.split(eol)
+        return start + c[0] + eol + indent_list(c[1:], ws1 * len(start))
+
+    def __repr__(self):
+        return repr([type(self).__name__, self.bullet, self.content])
 
 class DefinitionListItem(ListItem):
     content_str = lambda self: self.tag + ws1 + '::' + ws1 + ListItem.content_str(self)
@@ -160,7 +203,9 @@ class Node:
         if self.properties:
             ps = drawer('PROPERTIES', [prop(*p) for p in self.properties.items()])
             r.append(ps)
-            
+
+        #r += ['-----']
         r += [str(n) for n in self.content]
+        #r += ['-----']
         r += [str(n) for n in self.children]
         return eol.join(r)

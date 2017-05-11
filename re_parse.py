@@ -7,6 +7,7 @@ i_ = lambda s: r'(?i:%s)' % s
 g_ = lambda s: r'(?:%s)' % s
 or_ = lambda *args: g_('|'.join(args))
 in_ = lambda *args: r'[%s]' % (''.join(args))
+nin_ = lambda *args: r'[^%s]' % (''.join(args))
 def re_count(s):
     if isinstance(s, str):
         assert(s in '*+?')
@@ -17,6 +18,8 @@ def re_count(s):
 n_ = lambda s,n='+': g_(s) + re_count(n)
 o = lambda s: g_(s) + '?'
 g = lambda n, s: r'(?P<%s>%s)' % (n, s)
+not_ = lambda s: r'(?!%s)' % s
+
 ref_ = lambda name: r'(?P=%s)' % name
 ref_yes_no_ = lambda name, yes, no: r'(?(%s)%s|%s)' % (name, yes, no)
 def careful(s):
@@ -28,12 +31,14 @@ lax_only = lambda lax, strict=None: lax
 
 
 eol = '\n'
-ws_c = '[ \t]'
-ws = ws_c + '+'
-ows = ws_c + '*'
-ws1 = ws_c
-ows1 = ws_c + '?'
+ws_chars = ' \t'
+ws1 = in_(ws_chars)
+ws = ws1 + '+'
+ows = ws1 + '*'
+ows1 = ws1 + '?'
+nws1 = nin_(ws_chars)
+nws = nws1 + '+'
 
 chars = r'\w+'
 any = r'.+'
-
+num = in_('0-9') + '+'
