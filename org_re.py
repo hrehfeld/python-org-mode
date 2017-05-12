@@ -339,15 +339,29 @@ def make_date(m):
 
 
         m = dm.groupdict()
-        repeater = m.get('repeater', None)
+
+        def guess_key(key, ks):
+            for k in ks:
+                m = re.match(g('key', key + num) + '$', k)
+                if m and ks[k] is not None:
+                    #get number e.g. -> 'repeater0'
+                    key = m.group('key')
+                    break
+            return key
+
+        repeater_key = guess_key('repeater', m)
+        shift_key = guess_key('shift', m)
+        
+        #debug(m, repeater_key, shift_key)
+
+        repeater = m.get(repeater_key, None)
         if repeater:
-            repeater = get_modifier(dm, 'repeater')
+            repeater = get_modifier(dm, repeater_key)
 
 
-
-            repeater_range = m.get('repeater_range', None)
+            repeater_range = m.get(repeater_key + '_range', None)
             if repeater_range:
-                repeater_range = get_modifier_delta(dm, 'repeater_range')
+                repeater_range = get_modifier_delta(dm, repeater_key + '_range')
 
             repeater = DateRepeater(
                 DateRepeater.types[repeater[0]]
@@ -355,9 +369,9 @@ def make_date(m):
                 , repeater_range
             )
 
-        shift = m.get('shift_type', None)
+        shift = m.get(shift_key, None)
         if shift:
-            shift = get_modifier(dm, 'shift')
+            shift = get_modifier(dm, shift_key)
             shift = DateShift(DateShift.types[shift[0]], *shift[1:])
 
         return ast.Date(active, date, end_time, repeater=repeater, shift=shift)

@@ -1,5 +1,7 @@
 from re_parse import *
 
+import itertools
+
 digit = r'[0-9]'
 num = digit + '+'
 digits = lambda n='+': digit + re_count(n)
@@ -41,7 +43,7 @@ def repeater(postfix):
     pf = 'repeater' + postfix
     return g(pf, date_modifier_range(or_(*repeater_chars), pf))
 
-date_shift = lambda postfix: date_modifier(or_('--', '-'), 'shift' + postfix)
+date_shift = lambda postfix: g('shift' + postfix, date_modifier(or_('--', '-'), 'shift' + postfix))
 
 date = (g('year', digits(4)) + '-' + g('month', digits(2)) + '-' + g('day', digits(2)))
 
@@ -59,8 +61,11 @@ def date_stamp(time, extra=(repeater,), postfix=''):
     d = _g('date', date) + o(ws + _g('dayname', dayname)) + o(ws + _g('time', time))
     if extra:
         #extra = [o(ws + _g('extra%s' % i, e)) for i, e in enumerate(extra)]
-        extra = [o(ws + e(postfix)) for e in extra]
-        extra = ''.join(extra)
+        extras = itertools.permutations(extra)
+
+        extras = [[o(ws + e(postfix + str(i))) for e in extra] for i, extra in enumerate(extras)]
+        extras = [''.join(extra) for extra in extras]
+        extra = or_(*extras)
         d += extra
     return d
 
