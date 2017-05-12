@@ -1,5 +1,4 @@
 from collections import OrderedDict as odict
-from magic_repr import make_repr
 
 from str_build import *
 from datetime import datetime

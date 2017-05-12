@@ -11,8 +11,6 @@ from re_parse import *
 
 from collections import OrderedDict as odict
 
-from magic_repr import make_repr
-
 from ast import *
 import ast
 

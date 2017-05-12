@@ -1,5 +1,4 @@
 from collections import OrderedDict as odict
-from magic_repr import make_repr
 
 from str_build import *
 from datetime import datetime
@@ -205,8 +204,8 @@ class Node:
         self.content = content or []
         self.children = children or []
         
-    __repr__= make_repr(
-        'level', 'keyword', 'priority', 'title', 'tags', 'planning', 'attrs', 'properties', 'content', 'children',
-    )
+#    __repr__= make_repr(
+#        'level', 'keyword', 'priority', 'title', 'tags', 'planning', 'attrs', 'properties', 'content', 'children',
+#    )
 
 
