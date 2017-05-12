@@ -18,6 +18,7 @@ import ast
 
 import sys
 
+import write
 
 class QueueFirstIter:
     def __init__(self, it, queue):
@@ -98,7 +99,7 @@ def greater_block_parsers():
     return headline_parsers()
 
 def drawer_parsers():
-    return [L_DRAWER_END] + list(filter(lambda e: e != L_DRAWER, headline_parsers()))
+    return [L_DRAWER_END, L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT] + list_parsers() + [L_TEXT]
 
 def dynamic_block_parsers():
     return [L_EMPTY, L_TEXT]
@@ -279,7 +280,8 @@ headline_start = no_indent + headline_token + lax(ws, ws1)
 headline_keyword = r'[A-Z]{3,}'
 headline_priority = r'\[#[A-Z]\]'
 headline_title = r'.*?'
-headline_tags = r':.*:'
+# TAGS is made of words containing any alpha-numeric character, underscore, at sign, hash sign or percent sign, and separated with colons.
+headline_tags = enclosed(r'[:%#@_\w]', ':', ':')
 headline_str = (
     headline_start + ows + o(g('keyword', headline_keyword) + ws)
     + o(g('priority', headline_priority) + ws)
@@ -301,6 +303,8 @@ def make_date(m):
         dm = full_date_re.match(d)
         if not dm:
             warning('date doesnt match: "' + d + '"')
+            warning('re', date_re.full_date_stamp)
+
             return 
         active = dm.group('_active') is not None
         date_t = Date
@@ -321,12 +325,51 @@ def make_date(m):
             date = datetime(*date, *t)
         else:
             date = Date(*date)
-        return ast.Date(active, date, end_time)
+
+        def get_modifier_delta(m, p):
+            r = m.group(*[p + '_' + s for s in ['num', 'timespan']])
+            
+            v = int(r[0])
+
+            k = r[1]
+            d = DateDelta.from_org(**{k: v})
+            return d
+
+        def get_modifier(m, p):
+            r = m.group(p + '_' + 'type')
+            return (r, get_modifier_delta(m, p))
+
+
+        m = dm.groupdict()
+        repeater = m.get('repeater', None)
+        if repeater:
+            repeater = get_modifier(dm, 'repeater')
+
+
+
+            repeater_range = m.get('repeater_range', None)
+            if repeater_range:
+                repeater_range = get_modifier_delta(dm, 'repeater_range')
+
+            repeater = DateRepeater(
+                DateRepeater.types[repeater[0]]
+                , *repeater[1:]
+                , repeater_range
+            )
+
+        shift = m.get('shift_type', None)
+        if shift:
+            shift = get_modifier(dm, 'shift')
+            shift = DateShift(DateShift.types[shift[0]], *shift[1:])
+
+        return ast.Date(active, date, end_time, repeater=repeater, shift=shift)
 
     r = start_date = parse_date(ms['date'])
+    assert(r)
     end_date = ms['daterange']
     if end_date:
         end_date = parse_date(end_date)
+        assert(end_date)
         r = DateRange(start_date, end_date)
 
     return r
@@ -428,7 +471,15 @@ def block_start_parser(st, parser, line):
     def inner_text_parser(st, parser, line):
         return _line(line)
 
-    ps = lt_from([L_BLOCK_END, L_TEXT]), {L_TEXT: inner_text_parser, L_BLOCK_END: block_end_parser}
+
+    add_parser('block_end', block_end_start, block_end_parser)
+
+    ps = [(L_BLOCK_END, line_types[L_BLOCK_END])
+          , (L_TEXT, re.compile(r'.*'))
+    ], {
+        L_BLOCK_END: block_end_parser
+        , L_TEXT: inner_text_parser
+    }
     lines = parser.sub_parser(*ps, 'block')(st)
 
     c += [''.join(lines)]
@@ -471,7 +522,7 @@ drawer_value = g('value', nin_(eol) + '+')
 
 properties_name = i_('PROPERTIES')
 properties_start = indent + drawer_token + properties_name + drawer_token
-properties_property = indent + drawer_token + g('name', r'\S+[+\S]') + drawer_token + o(ws1 + drawer_value) + eol
+properties_property = indent + drawer_token + g('name', r'\S+') + o(g('append', r'\+')) + drawer_token + o(ws1 + drawer_value) + eol
 def properties_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
 
@@ -479,15 +530,18 @@ def properties_parser(st, parser, line):
 
 def property_parser(st, parser, line):
     m = _match(line)
+    #TODO parse attr properties
+    #TODO parse append
     k, v = m.group('name'), m.group('value')
+    warning(v)
     st.current_node.properties[k] = v
     
 
-drawer_start = indent + drawer_token + g('name', not_(properties_name) + r'[-_\w\d]+') + drawer_token
+drawer_start = indent + drawer_token + g('name', # not_(properties_name) + 
+                                         r'[-_\w\d]+') + drawer_token + ows + eol
 drawer_end = indent + drawer_token + i_('end') + drawer_token
     
-drawer_str = drawer_start + o(lax(ws, ws1) + drawer_value) + ows + eol
-drawer_re = re.compile(drawer_str)
+drawer_re = re.compile(drawer_start)
 def drawer_parser(st, parser, line):
     #print('drawer @ %s' % (_loc(line)))
     clear(st, _match(line).group('indent'))
@@ -507,7 +561,6 @@ def drawer_parser(st, parser, line):
         , lambda l: _type(l) not in {L_HEADLINE}
     )(st)
     st.current_greaters.pop()
-    debug(r.content[0].content)
 
 def drawer_end_parser(st, parser, line):
     #throw away
@@ -528,7 +581,8 @@ def dl_parser(st, parser, line):
 def ul_parser(st, parser, line):
 
     indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
-    assert(item[-1] != eol)
+    if item:
+        assert(item[-1] != eol)
 
     nindent = len(indent)
 
@@ -603,15 +657,16 @@ def ol_parser(st, parser, line):
 def text_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
 
+    text = lambda l: _match(l).group('text')
+
     def inner_text_parser(st, parser, line):
-        return _line(line)
+        return text(line)
 
     ps = lt_from(headline_parsers()), {L_TEXT: inner_text_parser}
     lines = parser.sub_parser(*ps, 'paragraph')(st)
-    lines = [_line(line)] + lines
+    lines = [text(line)] + lines
     for l in lines:
-        assert(l[-1] == eol)
-    lines = [l[:-1] for l in lines]
+        assert(l[-1] != eol)
     r = Para(lines)
     st.current_greater.content.append(r)
 
@@ -636,7 +691,7 @@ add_parser('footnote_def', footnote_def_start, noop_parser)
 add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + '::' + g('item', '.*') + eol, dl_parser)
 add_parser('ul', list_format(list_bullet_chars) + g('item', '.*') + eol, ul_parser)
 add_parser('ol', list_format(list_counter) + g('item', '.*') + eol, ol_parser)
-add_parser('text', indent + r'.', text_parser)
+add_parser('text', indent + g('text', r'.+') + eol, text_parser)
 
 for i, n in enumerate(line_types_names):
     exec('%s = %s' % ('L_' + n, i))
@@ -673,6 +728,6 @@ if __name__ == '__main__':
             start_time = time.time()
             ast = parse(f)
             duration = time.time() - start_time
-            print(ast)
+            print(write.dumps(ast))
             #print(repr(ast))
             #print(duration)
