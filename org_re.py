@@ -638,14 +638,14 @@ def dl_parser(st, parser, line):
     indent, bullet, tag, item = _match(line).group('indent', 'bullet', 'tag', 'item')
     if item:
         assert(item[-1] != eol)
-    li = DefinitionListItem(tag, [item], bullet)
+    li = DefinitionListItem(tag, [Para([item])], bullet)
     li_parser(st, parser, line, li)
 
 def ul_parser(st, parser, line):
     indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
     if item:
         assert(item[-1] != eol)
-    li = ListItem([item], bullet)
+    li = ListItem([Para([item])], bullet)
 
     li_parser(st, parser, line, li)
 
@@ -653,7 +653,7 @@ def ol_parser(st, parser, line):
     indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
     if item:
         assert(item[-1] != eol)
-    li = OrderedListItem([item], bullet)
+    li = OrderedListItem([Para([item])], bullet)
 
     li_parser(st, parser, line, li)
 
