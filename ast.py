@@ -178,8 +178,9 @@ class ListItem:
 
 class DefinitionListItem(ListItem):
     start = lambda self: self.bullet + ws1 + self.tag + ws1 + '::'
+
     def __init__(self, tag, *args):
-        ListItem.__init__(*args)
+        ListItem.__init__(self, *args)
         self.tag = tag
 
 class OrderedListItem(ListItem):

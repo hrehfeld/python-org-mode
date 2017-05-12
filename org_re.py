@@ -576,14 +576,8 @@ list_counter = or_('[A-Za-z]', '[0-9]+') + r'[.)]'
 
 
 ws_re = re.compile(ws)
-def dl_parser(st, parser, line):
-    pass
-def ul_parser(st, parser, line):
-
-    indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
-    if item:
-        assert(item[-1] != eol)
-
+def li_parser(st, parser, line, li):
+    indent = _match(line).group('indent')
     nindent = len(indent)
 
     p = None
@@ -633,9 +627,8 @@ def ul_parser(st, parser, line):
                 return False
             return True
 
-    r = ListItem([item], bullet)
-    p.content.append(r)
-    st.current_greaters.append(r)
+    p.content.append(li)
+    st.current_greaters.append(li)
 
     lt, ps = from_list(headline_parsers())
     parser.sub_parser(lt, ps, 'ul @%s' % _loc(line), valid_line())(st)
@@ -644,16 +637,29 @@ def ul_parser(st, parser, line):
     if list_end:
         st.current_greaters.pop()
 
-#    item_lines = p(st, it)
-#    item_lines = [item] + [_line(l) for l in item_lines]
-#    item_lines = ''.join(item_lines)
+def dl_parser(st, parser, line):
+    indent, bullet, tag, item = _match(line).group('indent', 'bullet', 'tag', 'item')
+    if item:
+        assert(item[-1] != eol)
+    li = DefinitionListItem(tag, [item], bullet)
+    li_parser(st, parser, line, li)
 
-    #if isinstance(c[-1], List) and c[-1].indent 
-        
-    #st.current_greaters.pop()
+def ul_parser(st, parser, line):
+    indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
+    if item:
+        assert(item[-1] != eol)
+    li = ListItem([item], bullet)
+
+    li_parser(st, parser, line, li)
 
 def ol_parser(st, parser, line):
-    pass
+    indent, bullet, item = _match(line).group('indent', 'bullet', 'item')
+    if item:
+        assert(item[-1] != eol)
+    li = OrderedListItem([item], bullet)
+
+    li_parser(st, parser, line, li)
+
 def text_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
 
@@ -688,7 +694,7 @@ add_parser('comment', comment_start, comment_parser)
 add_parser('drawer_end', drawer_end, drawer_end_parser)
 add_parser('drawer', drawer_start, drawer_parser)
 add_parser('footnote_def', footnote_def_start, noop_parser)
-add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + '::' + g('item', '.*') + eol, dl_parser)
+add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + ws1 + '::' + ws1 + g('item', '.*') + eol, dl_parser)
 add_parser('ul', list_format(list_bullet_chars) + g('item', '.*') + eol, ul_parser)
 add_parser('ol', list_format(list_counter) + g('item', '.*') + eol, ol_parser)
 add_parser('text', indent + g('text', r'.+') + eol, text_parser)
