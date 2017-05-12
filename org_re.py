@@ -531,7 +531,6 @@ def property_parser(st, parser, line):
     #TODO parse attr properties
     #TODO parse append
     k, v = m.group('name'), m.group('value')
-    warning(v)
     st.current_node.properties[k] = v
     
 
