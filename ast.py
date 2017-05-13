@@ -137,7 +137,9 @@ class Attr():
         return repr([type(self).__name__, [self.name, self.value]])
         
 class Block:
-    def __init__(self, name, value=None, content=None):
+    def __init__(self, start, end, name, value=None, content=None):
+        self.start = start
+        self.end = end
         self.name = name
         self.value = value
         self.content = content or ''

@@ -463,9 +463,9 @@ def empty_parser(st, parser, line):
     c.append(Empty([_line(line)[:-1]]))
 
 special_token = r'#\+'
-block_start_token = i_('begin_')
+block_start_token = g('start_token', i_('begin_'))
 block_start_start = indent + special_token + block_start_token
-block_end_token = i_('end_')
+block_end_token = g('end_token', i_('end_'))
 block_end_start = indent + special_token + block_end_token
 
         
@@ -479,13 +479,15 @@ def block_start_parser(st, parser, line):
     m = block_start_re.match(_line(line))
     if not m:
         raise Exception(_line(line))
-    c = [(m.group(k)) for k in ['name', 'value']]
 
     def inner_text_parser(st, parser, line):
         return _line(line)
 
-
-    add_parser('block_end', block_end_start, block_end_parser)
+    end_case = None
+    def block_end_parser(st, parser, line):
+        nonlocal end_case
+        end_case = _match(line).group('end_token')
+        raise StopIteration()
 
     ps = [(L_BLOCK_END, line_types[L_BLOCK_END])
           , (L_TEXT, re.compile(r'.*'))
@@ -495,6 +497,8 @@ def block_start_parser(st, parser, line):
     }
     lines = parser.sub_parser(*ps, 'block')(st)
 
+    c = [m.group('start_token'), end_case]
+    c += [(m.group(k)) for k in ['name', 'value']]
     c += [''.join(lines)]
     r = Block(*c)
     st.current_greater.content.append(r)

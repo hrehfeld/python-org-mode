@@ -30,11 +30,11 @@ class Writer:
         return indent + '# ' + str(self.value)
 
     def block(self, indent=''):
-        start = indent + '#+begin_' + self.name
+        start = indent + '#+' + self.start + self.name
         if self.value:
             start += ws1 + self.value
         start += eol
-        end = indent + '#+end_' + self.name
+        end = indent + '#+' + self.end + self.name
         return start + self.content + end
 
     def list(self, indent=''):
