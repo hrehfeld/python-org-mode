@@ -107,24 +107,6 @@ line_types_names = []
 line_types = []
 parsers = []
 
-
-
-# add_parser('empty', ows + eol, empty_parser)
-# add_parser('headline', headline_start, headline_parser)
-# add_parser('block_start', block_start_start, block_start_parser)
-# add_parser('block_end', block_end_start, block_end_parser)
-# add_parser('special_line', special_line_start, special_line_parser)
-# #todo
-# add_parser('comment', comment_start, comment_parser)
-# #add_type('comment', comment_start)
-# add_parser('drawer_end', drawer_end, drawer_end_parser)
-# add_parser('drawer', drawer_start, drawer_parser)
-# add_parser('dl', list_format(list_bullet_chars) + g('tag', r'.*') + '::' + g('item', '.*'), dl_parser)
-# add_parser('ul', list_format(list_bullet_chars) + g('item', '.*'), ul_parser)
-# add_parser('ol', list_format(list_counter) + g('item', '.*'), ol_parser)
-# add_parser('text', indent + r'.', text_parser)
-
-
 def lt_from(ps):
     return [(k, line_types[k]) for k in ps]    
 
