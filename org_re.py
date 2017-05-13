@@ -462,9 +462,9 @@ def empty_parser(st, parser, line):
     c.append(Empty([_line(line)[:-1]]))
 
 special_token = r'#\+'
-block_start_token = 'begin_'
+block_start_token = i_('begin_')
 block_start_start = indent + special_token + block_start_token
-block_end_token = r'end_'
+block_end_token = i_('end_')
 block_end_start = indent + special_token + block_end_token
 
         
