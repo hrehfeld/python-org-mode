@@ -443,11 +443,12 @@ def headline_parser(st, parser, line):
     
 schedule_item = g('name', '[A-Z]+') + ':' + lax_only(ows, ws) + date_re.simple_date_range
 schedule_item_re = re.compile(schedule_item)
-schedule_re = re.compile(
+schedule_re_str = (
     ows +
     n_('[A-Z]+' + ':') + lax(ows, ws) + n_(r'[-+.:<>/[\]A-Za-z0-9\s]')
     + ows + eol
 )
+schedule_re = re.compile(schedule_re_str)
 def planning_parser(st, parser, line):
     m = _match(line)
     dates = odict([(m.group('name'), make_date(m)) for m in schedule_item_re.finditer(_line(line))])
@@ -694,7 +695,7 @@ def add_parser(name, start, parser):
     
 add_parser('empty', ows + eol, empty_parser)
 add_parser('headline', headline_start, headline_parser)
-add_parser('planning', schedule_re, planning_parser)
+add_parser('planning', schedule_re_str, planning_parser)
 add_parser('properties', properties_start, properties_parser)
 add_parser('property', properties_property, property_parser)
 add_parser('block_start', block_start_start, block_start_parser)
