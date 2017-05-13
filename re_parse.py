@@ -3,11 +3,21 @@ import re
 enclosed = lambda x, s, e=None: s + x + (s if e is None else e)
 
 esc_ = re.escape
-i_ = lambda s: r'(?i:%s)' % s
 g_ = lambda s: r'(?:%s)' % s
 or_ = lambda *args: g_('|'.join(args))
 in_ = lambda *args: r'[%s]' % (''.join(args))
 nin_ = lambda *args: r'[^%s]' % (''.join(args))
+
+#only supported in py 3.6
+#i_ = lambda s: r'(?i:%s)' % s
+def i_(s):
+    def f(s):
+        assert(s not in r'*-\\|()[]{}')
+        
+        a, b = s.lower(), s.upper()
+        return in_(a + b) if a != b else a
+    return ''.join([f(c) for c in s])
+
 def re_count(s):
     if isinstance(s, str):
         assert(s in '*+?')
