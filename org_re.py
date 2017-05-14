@@ -192,7 +192,7 @@ class Parser:
             while self.continue_predicate(it.peek()):
                 t = _type(it.peek())
                 if t not in self.parsers:
-                    debug('%s not in self.parsers: %s' % (line_types_names[t], self.parsers))
+                    debug('%s(%s) not in self.parsers: %s' % (line_types_names[t], t, self.parsers))
                     raise StopIteration()
                 l = next(it)
                 p = self.parsers[t]
