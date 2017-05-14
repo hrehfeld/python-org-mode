@@ -523,7 +523,7 @@ def block_start_parser(st, parser, line):
 
     c = [m.group('start_token'), end_case]
     c += [(m.group(k)) for k in ['name', 'value']]
-    c += [''.join(lines)]
+    c += [lines]
     r = Block(*c)
     st.current_greater.content.append(r)
 
