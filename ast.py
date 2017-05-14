@@ -217,7 +217,10 @@ class Node:
         self.priority = priority
         self.title = title
         self.tags = tags or []
-        self.planning = planning or []
+        assert(isinstance(self.tags, list))
+        for t in self.tags:
+            assert(isinstance(t, str))
+        self.planning = planning or odict()
         self.properties = properties or odict()
         self.drawers = drawers or odict()
         self.attrs = attrs or odict()
