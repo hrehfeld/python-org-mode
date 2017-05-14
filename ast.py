@@ -111,6 +111,7 @@ class DateRange:
 
 class Para:
     def __init__(self, content=None):
+        assert(isinstance(content, list))
         self.content = content or []
 
     def __repr__(self):
