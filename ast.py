@@ -1,7 +1,7 @@
 from collections import OrderedDict as odict
 
 from str_build import *
-from datetime import datetime
+from datetime import datetime, date
 
 def indent(s, indent):
     return eol.join([indent + l for l in s.split(eol)])
@@ -80,9 +80,11 @@ class Date:
     time_format = '%H:%M'
     brackets = { True: ('<', '>'), False: ('[', ']') }
 
-    def __init__(self, active, date, end_time=None, repeater=None, shift=None):
+    def __init__(self, active, _date, end_time=None, repeater=None, shift=None):
         self.active = active
-        self.date = date
+        self.date = _date
+        print(repr(_date))
+        assert(isinstance(_date, datetime) or isinstance(_date, date))
         self.end_time = end_time
         self.repeater = repeater
         self.shift = shift
