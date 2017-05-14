@@ -812,6 +812,8 @@ if __name__ == '__main__':
     p.add_argument('--profile', action='store_true')
     p.add_argument('--verbose', '-v', action='store_true')
     p.add_argument('--no-output', '-n', action='store_true')
+    p.add_argument('--time', '-t', action='store_true')
+    p.add_argument('--output-type', '-o', choices={'org', 'json'}, default='org')
 
     args = p.parse_args()
 
@@ -829,8 +831,9 @@ if __name__ == '__main__':
             start_time = time.time()
             ast = parse(f)
             duration = time.time() - start_time
-            s = write.dumps(ast)
+            s = write.dumps(ast, type=args.output_type)
             if not args.no_output:
-                print(s)
+                pprint(s, indent=2, width=160)
             #print(repr(ast))
-            #print(duration)
+            if args.time:
+                print('%s s' % duration)
