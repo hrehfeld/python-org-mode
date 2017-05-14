@@ -16,22 +16,21 @@ def str_relativetimedelta(d):
 class DateDelta:
     durations = odict(y='years', m='months', w='weeks', d='days', h='hours')
 
-    def __init__(self, years=0, months=0, weeks=0, days=0, hours=0):
-        self.years = years
-        self.months = months
-        self.weeks = weeks
-        self.days = days
-        self.hours = hours
+    def __init__(self, value, unit):
+        self.value = value
+        self.unit = unit
 
     @classmethod
-    def from_org(c, y=0, m=0, w=0, d=0, h=0):
-        return c(
-            years=y
-            , months=m
-            , weeks=w
-            , days=d
-            , hours=h
-        )
+    def from_org(c, **kwargs):
+        value = None
+        unit = None
+        for k in DateDelta.durations:
+            if k in kwargs:
+                unit = k
+                value = kwargs[k]
+                break
+        assert(value is not None)
+        return c(value, unit)
 
     def __str__(self):
         r = []
