@@ -704,6 +704,58 @@ def ol_parser(st, parser, line):
 
     li_parser(st, parser, line, li)
 
+bar = r'\|'
+table_cell_inside = r'[^|\n]+' + ows
+table_cell = g('text', table_cell_inside) + bar
+table_cell_at_eol = g('text_eol', table_cell_inside) + o(bar)
+
+table_cell_re = re.compile(table_cell)
+table_cell_at_eol_re = re.compile(table_cell_at_eol)
+
+table_start = indent + bar
+table_row_start = table_start + or_(n_(table_cell) + o(table_cell_at_eol), g('is_rule', r'\-'))
+
+table_row_start_re = re.compile(table_row_start)
+
+def table_parser(st, parser, line):
+    
+    r = Table()
+    def table_row_parser(st, parser, line):
+        is_rule = m.group('is_rule')
+        if is_rule:
+            row = TableRule()
+        else:
+            cs = []
+            for c in table_cell_re.finditer(_line(line)):
+                cs.append(c.group('text'))
+                debug(c.group())
+            rest = _line(line)
+            if c:
+                rest = _line(line)[c.end():]
+            c = table_cell_at_eol_re.match(rest)
+            if c:
+                debug(c.group())
+                cs.append(c.group('text_eol'))
+                
+            row = TableRow(cs)
+        r.content.append(row)
+
+    m = table_row_start_re.match(_line(line))
+    assert(m)
+    table_row_parser(st, parser, build_line(L_TABLE_ROW, m, _loc(line), _line(line)))
+
+    ts = [L_TABLE_ROW] + Parsers.all()
+    ts.remove(L_TABLE)
+    lines = parser.sub_parser(
+        ts
+        , dict([(L_TABLE_ROW, table_row_parser)])
+        , 'table')(st)
+
+    st.current_greater.content.append(r)
+
+add_parser('table', table_start, table_parser)
+add_type('table_row', table_start)
+
 def text_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
 

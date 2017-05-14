@@ -61,6 +61,12 @@ class Writer:
     definitionlistitem = listitem
 
 
+    def table(self, indent=''):
+        print(self.content)
+        bar = '|'
+        r = [indent + bar + bar.join(row.content) + bar for row in self.content]
+        return eol.join(r)
+
     def drawer(self, indent=''):
         values = list(map(lambda e: dumps(e, indent), self.content))
         return drawer(self.name, values, indent)

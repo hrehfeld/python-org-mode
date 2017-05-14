@@ -155,6 +155,21 @@ class CommentBlock(Block):
         r = ['# ' + l for l in r]
         return eol.join(r)
 
+class TableRule:
+    pass
+class TableRow:
+    def __init__(self, content=None):
+        self.content = content or []
+
+    def __repr__(self):
+        return repr([type(self).__name__, self.content])
+    
+class Table:
+    def __init__(self, content=None):
+        self.content = content or []
+
+    def __repr__(self):
+        return repr([type(self).__name__, self.content])
 
 
 class List:
