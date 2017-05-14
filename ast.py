@@ -83,7 +83,6 @@ class Date:
     def __init__(self, active, _date, end_time=None, repeater=None, shift=None):
         self.active = active
         self.date = _date
-        print(repr(_date))
         assert(isinstance(_date, datetime) or isinstance(_date, date))
         self.end_time = end_time
         self.repeater = repeater
