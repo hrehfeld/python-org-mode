@@ -76,54 +76,86 @@ _match = lambda l: l[1]
 _loc = lambda l: l[2]
 _line = lambda l: l[3]
 
-def list_parsers():
-    return [L_DL, L_UL, L_OL]
+build_line= lambda type, match, loc, line: (type, match, loc, line)
 
-def footnote_def_parsers():
-    return [L_EMPTY, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_COMMENT, L_DRAWER] + item_parsers() + [L_TEXT]
+class Parsers:
+    @staticmethod
+    def list():
+        return [L_DL, L_UL, L_OL]
 
-def item_parsers():
-    r = [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER, L_TEXT]
-    return r
+    @staticmethod
+    def footnote_def():
+        return [L_EMPTY, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_COMMENT, L_DRAWER] + Parsers.list_item() + [L_TEXT]
 
-def greater_parsers():
-    r = [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER, L_TEXT]
-    return r
+    @staticmethod
+    def list_item():
+        l = Parsers.list()
+        r = filter(lambda e: e not in l, Parsers.all())
+        return r
 
-def headline_parsers():
-    return [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER] + list_parsers() + [L_TEXT]
+    @staticmethod
+    def greater():
+        return Parsers.all()
 
-def greater_block_parsers():
-    return headline_parsers()
+    @staticmethod
+    def headline():
+        return Parsers.all()
 
-def drawer_parsers():
-    return [L_DRAWER_END, L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT] + list_parsers() + [L_TEXT]
+    @staticmethod
+    def greater_block():
+        return Parsers.all()
 
-def dynamic_block_parsers():
-    return [L_EMPTY, L_TEXT]
+    @staticmethod
+    def all():
+        return [L_EMPTY, L_HEADLINE, L_DYNAMIC_BLOCK, L_BLOCK_START, L_SPECIAL_LINE, L_FOOTNOTE_DEF, L_COMMENT, L_DRAWER, L_TABLE] + Parsers.list() + [L_TEXT]
+        
+
+    @staticmethod
+    def drawer():
+        return [L_DRAWER_END] + Parsers.all()
+
+    @staticmethod
+    def dynamic_block():
+        return [L_EMPTY, L_TEXT]
 
 #set later
 line_types_names = []
 line_types = []
 parsers = []
 
-def lt_from(ps):
-    return [(k, line_types[k]) for k in ps]    
+def parsers_from_list(types):
+    return dict([(k, parsers[k]) for k in types])
 
-def from_list(ps):
-    ts = lt_from(ps)
-    ps = dict([(k, parsers[k]) for k in ps])
-    return ts, ps
+def parsers_from_tuples(ps):
+    return [(k, t) for k, t, p in ps], dict([(k, p) for k, t, p in ps])
+
+def from_list(types):
+    return types, parsers_from_list(types)
+
+def _add_type(name, start):
+    line_types.append(start)
+    line_types_names.append(name.upper())
+    
+def add_type(name, start):
+    _add_type(name, start)
+    parsers.append(None)
+    
+def add_parser(name, start, parser):
+    _add_type(name, start)
+    parsers.append(parser)
+    
+
 
 class Parser:
-    def __init__(self, parent_parser, it, line_types, parsers, name, continue_predicate=None):
+    def __init__(self, parent_parser, it, _line_types, parsers, name, continue_predicate=None):
         self.parent_parser = parent_parser
         if parent_parser is None:
             it = QueueFirstIter(it, [])
         self.base_it = it
         def match_type(line):
             #debug([line_types_names[t] for t,r in self.line_types])
-            for t, r in self.line_types:
+            for t in self.line_types:
+                r = line_types[t]
                 m = r.match(line)
                 if m:
                     debug('from "%s" matched as %s: "%s" to "%s"' % (self.name, line_types_names[t], line[:-1], r))
@@ -146,7 +178,9 @@ class Parser:
 
         self.it = PeekIter(lines(it))
 
-        self.line_types = line_types
+        assert(_line_types is not None)
+        self.line_types = _line_types
+        assert(isinstance(parsers, dict))
         self.parsers = parsers
         self.name = name
         self.continue_predicate = continue_predicate or (lambda *args: True)
@@ -407,21 +441,26 @@ def headline_parser(st, parser, line):
             self.i += 1
             return self.i <= self.n
 
-    debug('SUBPARSER HEADLING')
-    pred = lambda l: not (_type(l) == L_HEADLINE and get_level(_match(l)) >= level)
-    n1 = NTimes(1)
     p = parser.sub_parser(
-        *from_list([L_PLANNING, L_PROPERTIES] + headline_parsers())
-        , 'headline-planning-properties'
-        , lambda l: n1(l) and pred(l)
+        [L_PLANNING, L_PROPERTIES] + Parsers.headline()
+        , {L_PLANNING: planning_parser}
+        , 'headline-planning'
+        , NTimes(1)
     )(st)
-    n1 = NTimes(1)
     p = parser.sub_parser(
-        *from_list([L_PROPERTIES] + headline_parsers())
+        [L_PROPERTIES] + Parsers.headline()
+        , {L_PROPERTIES: properties_parser}
         , 'headline-properties'
-        , lambda l: n1(l) and pred(l)
+        , NTimes(1)
     )(st)
-    p = parser.sub_parser(*from_list(headline_parsers()), 'headline', pred)(st)
+
+    pred = lambda l: not (_type(l) == L_HEADLINE and get_level(_match(l)) >= level)
+    p = parser.sub_parser(
+        Parsers.headline()
+        , parsers_from_list(Parsers.headline())
+        , 'headline'
+        , pred
+    )(st)
     
 schedule_item = g('name', '[A-Z]+') + ':' + lax_only(ows, ws) + date_re.simple_date_range
 schedule_item_re = re.compile(schedule_item)
@@ -462,8 +501,6 @@ def block_start_parser(st, parser, line):
     if not m:
         raise Exception(_line(line))
 
-    def inner_text_parser(st, parser, line):
-        return _line(line)
 
     end_case = None
     def block_end_parser(st, parser, line):
@@ -471,13 +508,18 @@ def block_start_parser(st, parser, line):
         end_case = _match(line).group('end_token')
         raise StopIteration()
 
-    ps = [(L_BLOCK_END, line_types[L_BLOCK_END])
-          , (L_TEXT, re.compile(r'.*'))
-    ], {
-        L_BLOCK_END: block_end_parser
-        , L_TEXT: inner_text_parser
-    }
-    lines = parser.sub_parser(*ps, 'block')(st)
+    ts = [L_BLOCK_END, L_BLOCK_CONTENT, L_HEADLINE]
+    ps = dict(zip(ts, [block_end_parser, block_content_parser]))
+    debug(ps)
+    lines = parser.sub_parser(
+        ts
+        , ps
+        , 'block'
+    )(st)
+    if not end_case:
+        warning('no end tag for block at %s' % (_loc(line)))
+        assert(False)
+        #end_case = 'begin_'
 
     c = [m.group('start_token'), end_case]
     c += [(m.group(k)) for k in ['name', 'value']]
@@ -487,6 +529,10 @@ def block_start_parser(st, parser, line):
 
 def block_end_parser(st, parser, line):
     raise StopIteration()
+
+def block_content_parser(st, parser, line):
+    return _line(line)
+
 
  #(?=begin_)
 special_line_start = indent + special_token + g('name', chars) + ':'
@@ -554,7 +600,7 @@ def drawer_parser(st, parser, line):
     st.current_greater.content.append(r)
     st.current_greaters.append(r)
     parser.sub_parser(
-        *from_list(drawer_parsers())
+        *from_list(Parsers.drawer())
         , 'drawer'
         , lambda l: _type(l) not in {L_HEADLINE}
     )(st)
@@ -628,7 +674,7 @@ def li_parser(st, parser, line, li):
     p.content.append(li)
     st.current_greaters.append(li)
 
-    lt, ps = from_list(headline_parsers())
+    lt, ps = from_list(Parsers.headline())
     parser.sub_parser(lt, ps, 'ul @%s' % _loc(line), valid_line())(st)
 
     st.current_greaters.pop()
@@ -666,7 +712,7 @@ def text_parser(st, parser, line):
     def inner_text_parser(st, parser, line):
         return text(line)
 
-    ps = lt_from(headline_parsers()), {L_TEXT: inner_text_parser}
+    ps = Parsers.headline(), {L_TEXT: inner_text_parser}
     lines = parser.sub_parser(*ps, 'paragraph')(st)
     lines = [text(line)] + lines
     for l in lines:
@@ -674,11 +720,6 @@ def text_parser(st, parser, line):
     r = Para(lines)
     st.current_greater.content.append(r)
 
-def add_parser(name, start, parser):
-    line_types.append(start)
-    line_types_names.append(name.upper())
-    parsers.append(parser)
-    
 add_parser('empty', ows + eol, empty_parser)
 add_parser('headline', headline_start, headline_parser)
 add_parser('planning', schedule_re_str, planning_parser)
@@ -697,6 +738,9 @@ add_parser('ul', list_format(list_bullet_chars) + g('item', '.*') + eol, ul_pars
 add_parser('ol', list_format(list_counter) + g('item', '.*') + eol, ol_parser)
 add_parser('text', indent + g('text', r'.+') + eol, text_parser)
 
+add_parser('block_content', r'.*', block_content_parser)
+
+
 for i, n in enumerate(line_types_names):
     exec('%s = %s' % ('L_' + n, i))
 line_types = [re.compile(v) for v in line_types]
@@ -704,7 +748,7 @@ line_types = [re.compile(v) for v in line_types]
 
 def parse(f):
     st = ParseState()
-    Parser(None, f, *from_list(headline_parsers()), 'file')(st)
+    Parser(None, f, *from_list(Parsers.headline()), 'file')(st)
     return st.current_nodes[0]
 
 
