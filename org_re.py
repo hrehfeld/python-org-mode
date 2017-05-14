@@ -295,7 +295,7 @@ headline_keyword = r'[A-Z]{3,}'
 headline_priority = r'\[#[A-Z]\]'
 headline_title = r'.*?'
 # TAGS is made of words containing any alpha-numeric character, underscore, at sign, hash sign or percent sign, and separated with colons.
-headline_tags = enclosed(r'[:%#@_\w]', ':', ':')
+headline_tags = ':' + r'[:%#@_\w]+' + ':'
 headline_str = (
     headline_start + ows + o(g('keyword', headline_keyword) + ws)
     + o(g('priority', headline_priority) + ws)
