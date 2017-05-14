@@ -25,7 +25,7 @@ a part that could be included in an element.  Greater elements are all
 parts that can contain an element.
 
 Empty lines belong to the largest element ending before them.  For
-example, in a list, empty lines between items belong are part of the
+example, in a list, empty lines between items are part of the
 item before them, but empty lines at the end of a list belong to the
 plain list element.
 
@@ -259,10 +259,11 @@ or a hyphen, enclosed within square brackets.
 TAG follows "TAG-TEXT ::" pattern, where TAG-TEXT can contain any
 character but a new line.
 
-An item ends before the next item, the first line less or equally
-indented than its starting line, or two consecutive empty lines.
-Indentation of lines within other greater elements do not count,
-neither do inlinetasks boundaries.
+An item ends before the next item of the same indentation, the first
+line less or equally indented than its starting line that is not
+empty, or two consecutive empty lines.  Within a drawer, the end of
+the drawer also ends the list item.  Indentation of lines within other
+greater elements do not count, neither do inlinetasks boundaries.
 
 A plain list is a set of consecutive items of the same indentation.
 It can only directly contain items.
@@ -315,7 +316,7 @@ CONTENTS
 where CONTENTS consists of zero or more [[#Node_Properties][node properties]].
 
 ** Tables
-Tables start at lines beginning with either a vertical bar or the
+Tables start at lines beginning with either a vertical bar, or the
 "+-" string followed by plus or minus signs only, assuming they are
 not preceded with lines of the same type.  These lines can be
 indented.
@@ -834,7 +835,7 @@ YYYY-MM-DD DAYNAME
 Y, M and D are digits.  DAYNAME can contain any non
 whitespace-character besides ~+~, ~-~, ~]~, ~>~, a digit or ~\n~.
 
-TIME follows the pattern =H:MM~.  H can be one or two digit long
+TIME follows the pattern =H:MM=.  H can be one or two digit long
 and can start with 0.
 
 REPEATER-OR-DELAY follows the pattern:
