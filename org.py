@@ -391,6 +391,18 @@ def Syntax():
     
 
     syntax = oeols + Optional(file_special) + ZeroOrMore(node)
+
+    empty_line = owsl
+
+    headline = headline_token * (1, None) + wsl1
+    special_line = special_token + lax(owsl) + ~special_block_start_token
+
+
+    syntax = ZeroOrMore(LineStart() + (
+        empty_line | headline | special_line | drawer_line | special_block | text
+    ) + restOfLine + LineEnd)
+
+
     return syntax.leaveWhitespace()
 
 syntax = Syntax()
