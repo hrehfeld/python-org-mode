@@ -811,6 +811,7 @@ if __name__ == '__main__':
     p.add_argument('file')
     p.add_argument('--profile', action='store_true')
     p.add_argument('--verbose', '-v', action='store_true')
+    p.add_argument('--no-output', '-n', action='store_true')
 
     args = p.parse_args()
 
@@ -828,6 +829,8 @@ if __name__ == '__main__':
             start_time = time.time()
             ast = parse(f)
             duration = time.time() - start_time
-            print(write.dumps(ast))
+            s = write.dumps(ast)
+            if not args.no_output:
+                print(s)
             #print(repr(ast))
             #print(duration)
