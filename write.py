@@ -86,7 +86,8 @@ class Org:
         r = []
         for row in self.content:
             if isinstance(row, ast.TableRow):
-                s = indent + bar + bar.join(row.content) + bar
+                cs = [c + ' ' * (w - len(c)) for c, w in zip(row.content, col_widths)]
+                s = indent + bar + bar.join(cs) + bar
             else:
                 l = [n * '-' for n in col_widths]
                 s = bar + plus.join(l) + bar
