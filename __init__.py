@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import pyparsing
 from pprint import pprint
 #syntax = ZeroOrMore(LineStart() + (
 #        empty_line | headline | special_line | drawer_line | special_block | text
@@ -11,12 +10,15 @@ from re_parse import *
 
 from collections import OrderedDict as odict
 
-from ast import *
-import ast
+from org.ast import *
+import org.ast
 
 import sys
 
-import write
+import org.write
+import org.date_re
+
+from logging import warning, debug
 
 class QueueFirstIter:
     def __init__(self, it, queue):
@@ -54,21 +56,6 @@ class PeekIter:
             return next(self)
         raise StopIteration
 
-def warning(*args):
-    r = 'WARNING:' + ' '.join(map(str, args)) + '\n'
-    sys.stderr.write(r)
-
-print_debug = False
-
-def debug(*args):
-    if not print_debug:
-        return
-    r = 'DEBUG:' + ' '.join(map(str, args)) + '\n'
-    sys.stderr.write(r)
-    pass
-    
-
-import date_re
 
 
 _type = lambda l: l[0]
@@ -523,8 +510,7 @@ def block_start_parser(st, parser, line):
 
     c = [m.group('start_token'), end_case]
     c += [(m.group(k)) for k in ['name', 'value']]
-    c += [lines]
-    r = Block(*c)
+    r = Block(*c, ''.join(lines))
     st.current_greater.content.append(r)
 
 def block_end_parser(st, parser, line):
@@ -713,7 +699,8 @@ table_cell_re = re.compile(table_cell)
 table_cell_at_eol_re = re.compile(table_cell_at_eol)
 
 table_start = indent + bar
-table_row_start = table_start + or_(n_(table_cell) + o(table_cell_at_eol), g('is_rule', r'\-'))
+table_row_start = table_start + or_(n_(table_cell) + o(table_cell_at_eol)
+                                    , g('is_rule', '-[-+]*')) + ows + eol
 
 table_row_start_re = re.compile(table_row_start)
 
@@ -721,11 +708,13 @@ def table_parser(st, parser, line):
     
     r = Table()
     def table_row_parser(st, parser, line):
+        m = _match(line)
         is_rule = m.group('is_rule')
         if is_rule:
             row = TableRule()
         else:
             cs = []
+            c = None
             for c in table_cell_re.finditer(_line(line)):
                 cs.append(c.group('text'))
                 debug(c.group())
@@ -736,7 +725,8 @@ def table_parser(st, parser, line):
             if c:
                 debug(c.group())
                 cs.append(c.group('text_eol'))
-                
+
+            assert(cs)
             row = TableRow(cs)
         r.content.append(row)
 
@@ -754,7 +744,7 @@ def table_parser(st, parser, line):
     st.current_greater.content.append(r)
 
 add_parser('table', table_start, table_parser)
-add_type('table_row', table_start)
+add_type('table_row', table_row_start)
 
 def text_parser(st, parser, line):
     clear(st, _match(line).group('indent'))
@@ -769,6 +759,7 @@ def text_parser(st, parser, line):
     lines = [text(line)] + lines
     for l in lines:
         assert(l[-1] != eol)
+    debug(lines)
     r = Para(lines)
     st.current_greater.content.append(r)
 
@@ -804,36 +795,3 @@ def parse(f):
     return st.current_nodes[0]
 
 
-if __name__ == '__main__':
-    from argparse import ArgumentParser
-
-    p = ArgumentParser('orgmode')
-    p.add_argument('file')
-    p.add_argument('--profile', action='store_true')
-    p.add_argument('--verbose', '-v', action='store_true')
-    p.add_argument('--no-output', '-n', action='store_true')
-    p.add_argument('--time', '-t', action='store_true')
-    p.add_argument('--output-type', '-o', choices={'org', 'json'}, default='org')
-
-    args = p.parse_args()
-
-    if args.verbose:
-        print_debug = True
-    
-
-    filename = args.file
-    with open(filename, 'r') as f:
-        if args.profile:
-            import profile
-            profile.run('parse(f)', sort='cumtime')
-        else:
-            import time
-            start_time = time.time()
-            ast = parse(f)
-            duration = time.time() - start_time
-            s = write.dumps(ast, type=args.output_type)
-            if not args.no_output:
-                pprint(s, indent=2, width=160)
-            #print(repr(ast))
-            if args.time:
-                print('%s s' % duration)

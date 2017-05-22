@@ -3,11 +3,11 @@ from collections import OrderedDict as odict
 from str_build import *
 from datetime import datetime
 
-from org_re import warning
+from logging import warning
 import json
 
-from ast import Node as AstNode
-import ast
+from org.ast import Node as AstNode
+import org.ast as ast
 import traceback
 
 ORG = 1
