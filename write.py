@@ -270,7 +270,7 @@ def dumps_json(node, indent=''):
             end = fields.Str()
             name = fields.Str()
             value = fields.Str()
-            content = fields.Function(serialize_content)
+            content = fields.Str()
         block = Block()
 
         def empty(obj):

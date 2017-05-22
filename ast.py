@@ -137,7 +137,7 @@ class Block:
         self.name = name
         self.value = value
         self.content = content or ''
-        assert(isinstance(self.content, list))
+        assert(isinstance(self.content, str))
 
     def __repr__(self):
         return repr([type(self).__name__, [self.name, self.value], *self.content])
