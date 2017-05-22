@@ -33,14 +33,7 @@ class DateDelta:
         return c(value, unit)
 
     def __str__(self):
-        r = []
-        for k, v in self.durations.items():
-            a = getattr(self, v)
-            if a != 0:
-                r.append(str(a) + k)
-        if len(r) != 1:
-            raise Exception('malformed datedelta')
-        return r[0]
+        return str(self.value) + self.unit
 
 
 class DateShift:
