@@ -70,8 +70,27 @@ class Org:
 
 
     def table(self, indent=''):
+
+        col_widths = []
+        for row in self.content:
+            if isinstance(row, ast.TableRow):
+                for i, c in enumerate(row.content):
+                    n = len(c)
+                    if i >= len(col_widths):
+                        col_widths.append(n)
+                    else:
+                        col_widths[i] = max(n, col_widths[i])
+
         bar = '|'
-        r = [indent + bar + bar.join(row.content) + bar for row in self.content]
+        plus = '+'
+        r = []
+        for row in self.content:
+            if isinstance(row, ast.TableRow):
+                s = indent + bar + bar.join(row.content) + bar
+            else:
+                l = [n * '-' for n in col_widths]
+                s = bar + plus.join(l) + bar
+            r.append(s)
         return eol.join(r)
 
     def drawer(self, indent=''):
