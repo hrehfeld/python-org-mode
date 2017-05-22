@@ -227,7 +227,8 @@ def dumps_json(node, indent=''):
                 return obj
             n = get_type_name(obj)
 
-            assert(hasattr(schemas, n))
+            if not hasattr(schemas, n):
+                raise Exception('no json schema for %s' % n)
             f = getattr(schemas, n)
             if isinstance(f, Schema):
                 c, errs = f.dump(obj)
