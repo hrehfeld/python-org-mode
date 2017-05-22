@@ -303,6 +303,7 @@ def dumps_json(node, indent=''):
             bullet = fields.String()
             content = fields.Function(serialize_content)
         listitem = ListItem()
+        orderedlistitem = ListItem()
 
         class DefinitionListItem(Schema):
             bullet = fields.String()
@@ -320,6 +321,9 @@ def dumps_json(node, indent=''):
 
         def tablerow(obj):
             return obj.content
+
+        def tablerule(obj):
+            return None
         
 
     def maybe_daterange(self):
